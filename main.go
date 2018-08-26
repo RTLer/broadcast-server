@@ -38,6 +38,7 @@ type User struct {
 	channels []string
 	conn     *websocket.Conn
 }
+
 type Store struct {
 	Users []*User
 	sync.Mutex
@@ -62,11 +63,16 @@ func init() {
 	}
 }
 
-func (s *Store) newUser(conn *websocket.Conn) *User {
+func (s *Store) newUser(conn *websocket.Conn, trackId string) *User {
 	userUuid, _ := uuid.NewV4()
+	var channels []string
+	if trackId != "" {
+		channels = []string{"tracker:"+trackId}
+	}
+
 	u := &User{
 		ID:       userUuid.String(),
-		channels: []string{},
+		channels: channels,
 		conn:     conn,
 	}
 
@@ -92,7 +98,7 @@ func main() {
 
 	go deliverMessages()
 
-	http.HandleFunc("/api/ws", wsHandler)
+	http.HandleFunc("/api/ws/", wsHandler)
 
 	log.Printf("server started at %s\n", serverAddress)
 	log.Fatal(http.ListenAndServe(serverAddress, nil))
@@ -107,7 +113,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	u := gStore.newUser(conn)
+	trackId := r.URL.Path[len("/api/ws/"):]
+	u := gStore.newUser(conn, trackId)
 	go func(u *User) {
 		err := u.subscribeUser(r)
 		if err != nil {
@@ -204,7 +211,9 @@ func (u *User) subscribeUser(r *http.Request) error {
 	}
 	res := AuthChannels{}
 	json.Unmarshal(bodyBytes, &res)
-	u.channels = res.Channels
+	for _, channel := range res.Channels {
+		u.channels = append(u.channels, channel)
+	}
 
 	subs.sub(u)
 
@@ -229,10 +238,10 @@ func deliverMessages() {
 
 //
 func (s *Store) findAndDeliver(redisChannel string, content string) {
-	uuid, _ := uuid.NewV4()
+	deliveryUuid, _ := uuid.NewV4()
 	m := Message{
-		DeliveryID: uuid.String(),
-		Content: content,
+		DeliveryID: deliveryUuid.String(),
+		Content:    content,
 	}
 	for _, u := range s.Users {
 		for _, channel := range u.channels {
