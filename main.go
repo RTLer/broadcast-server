@@ -14,8 +14,6 @@ import (
 	"encoding/json"
 )
 
-//all,user_id,uuid
-
 var (
 	gStore      *Store
 	gPubSubConn *redis.PubSubConn
@@ -67,7 +65,7 @@ func (s *Store) newUser(conn *websocket.Conn, trackId string) *User {
 	userUuid, _ := uuid.NewV4()
 	var channels []string
 	if trackId != "" {
-		channels = []string{"tracker:"+trackId}
+		channels = []string{"tracker:" + trackId}
 	}
 
 	u := &User{
@@ -104,8 +102,6 @@ func main() {
 	log.Fatal(http.ListenAndServe(serverAddress, nil))
 }
 
-//
-//
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -220,7 +216,6 @@ func (u *User) subscribeUser(r *http.Request) error {
 	return nil
 }
 
-//
 func deliverMessages() {
 	for {
 		switch v := gPubSubConn.Receive().(type) {
@@ -236,7 +231,6 @@ func deliverMessages() {
 	}
 }
 
-//
 func (s *Store) findAndDeliver(redisChannel string, content string) {
 	deliveryUuid, _ := uuid.NewV4()
 	m := Message{
@@ -244,6 +238,14 @@ func (s *Store) findAndDeliver(redisChannel string, content string) {
 		Content:    content,
 	}
 	for _, u := range s.Users {
+		if "all" == redisChannel {
+			if err := u.conn.WriteJSON(m); err != nil {
+				log.Printf("error on message delivery through ws. e: %s\n", err)
+			} else {
+				log.Printf("user %s found at our store, message sent\n", redisChannel)
+			}
+			continue
+		}
 		for _, channel := range u.channels {
 			if channel == redisChannel {
 				if err := u.conn.WriteJSON(m); err != nil {
