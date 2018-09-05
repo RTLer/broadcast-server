@@ -81,6 +81,16 @@ func (s *Store) newUser(conn *websocket.Conn, trackId string) *User {
 	return u
 }
 
+func (s *Store) removeUser(u *User) {
+	for index, user := range s.Users {
+		if user.ID == u.ID {
+			s.Lock()
+			defer s.Unlock()
+			s.Users = append(s.Users[:index], s.Users[index+1:]...)
+		}
+	}
+}
+
 func main() {
 	gRedisConn, err := gRedisConn()
 	if err != nil {
@@ -127,6 +137,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			if i >= 10 {
 				log.Printf("error on ws. message %s\n", err.Error())
 				subs.unsub(u)
+				gStore.removeUser(u)
 				u.conn.Close()
 				break
 			}
@@ -245,13 +256,14 @@ func (s *Store) findAndDeliver(redisChannel string, content string) {
 				log.Printf("user %s found at our store, message sent\n", redisChannel)
 			}
 			continue
-		}
-		for _, channel := range u.channels {
-			if channel == redisChannel {
-				if err := u.conn.WriteJSON(m); err != nil {
-					log.Printf("error on message delivery through ws. e: %s\n", err)
-				} else {
-					log.Printf("user %s found at our store, message sent\n", redisChannel)
+		} else {
+			for _, channel := range u.channels {
+				if channel == redisChannel {
+					if err := u.conn.WriteJSON(m); err != nil {
+						log.Printf("error on message delivery through ws. e: %s\n", err)
+					} else {
+						log.Printf("user %s found at our store, message sent\n", redisChannel)
+					}
 				}
 			}
 		}
