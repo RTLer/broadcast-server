@@ -20,8 +20,10 @@ var (
 	gRedisConn  = func() (redis.Conn, error) {
 		return redis.Dial("tcp", ":6378")
 	}
-	serverAddress = ":8081"
-	subs          = subscribscription{
+	serverAddress     = ":8081"
+	authUrl           = "http://localhost:8003/api/broadcast/myChannels"
+	//publicChannelsUrl = "http://localhost:8003/api/broadcast/publicChannels"
+	subs              = subscribscription{
 		Channels: []string{},
 	}
 	upgrader = websocket.Upgrader{
@@ -66,7 +68,7 @@ func (s *Store) newUser(conn *websocket.Conn, trackId string) *User {
 	userUuid, _ := uuid.NewV4()
 	var channels []string
 	if trackId != "" {
-		channels = []string{"tracker:" + trackId}
+		channels = []string{"direct." + trackId}
 	}
 
 	u := &User{
@@ -101,7 +103,7 @@ func main() {
 
 	gPubSubConn = &redis.PubSubConn{Conn: gRedisConn}
 	defer gPubSubConn.Close()
-	if err := gPubSubConn.Subscribe("all"); err != nil {
+	if err := gPubSubConn.Subscribe("public.all"); err != nil {
 		panic(err)
 	}
 
@@ -181,7 +183,7 @@ UnSubscriptionLoop:
 		for _, user := range gStore.Users {
 			if user.ID != u.ID {
 				for _, otherUsersChannel := range user.channels {
-					if userChannel  == otherUsersChannel{
+					if userChannel == otherUsersChannel {
 						log.Printf("another user subscribed to \"%s\" channel\n", userChannel)
 						continue UnSubscriptionLoop
 					}
@@ -204,50 +206,52 @@ UnSubscriptionLoop:
 }
 
 func (u *User) subscribeUser(r *http.Request) error {
-	auth := r.Header.Get("Authorization")
-	if auth == "" {
-		cookiesAuth, err := r.Cookie("access_token")
-		if err != nil {
-			log.Printf("unauth request %s\n" + err.Error())
-			return errors.New("auth failed")
+	noAuth := r.URL.Query().Get("noauth")
+	if noAuth == "" {
+		auth := r.Header.Get("Authorization")
+		if auth == "" {
+			cookiesAuth, err := r.Cookie("access_token")
+			if err != nil {
+				log.Printf("unauth request %s\n" + err.Error())
+				return errors.New("auth failed")
+			}
+			auth = "Bearer " + cookiesAuth.Value
 		}
-		auth = "Bearer " + cookiesAuth.Value
-	}
 
-	var netTransport = &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout: 5 * time.Second,
-		}).DialContext,
-		TLSHandshakeTimeout: 5 * time.Second,
-	}
+		var netTransport = &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: 5 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout: 5 * time.Second,
+		}
 
-	netClient := &http.Client{
-		Timeout:   time.Second * 10,
-		Transport: netTransport,
-	}
+		netClient := &http.Client{
+			Timeout:   time.Second * 10,
+			Transport: netTransport,
+		}
 
-	req, _ := http.NewRequest("GET", "http://localhost:8003/api/broadcast/channels", nil)
-	req.Header.Set("Authorization", auth)
-	response, err := netClient.Do(req)
+		req, _ := http.NewRequest("GET", authUrl, nil)
+		req.Header.Set("Authorization", auth)
+		response, err := netClient.Do(req)
 
-	if err != nil {
-		return errors.New("auth request failed: " + err.Error())
-	}
+		if err != nil {
+			return errors.New("auth request failed: " + err.Error())
+		}
 
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return errors.New("auth request got wrong http code: " + string(http.StatusOK))
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			return errors.New("auth request got wrong http code: " + string(http.StatusOK))
+		}
+		bodyBytes, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			return errors.New("auth request parse failed: " + err.Error())
+		}
+		res := AuthChannels{}
+		json.Unmarshal(bodyBytes, &res)
+		for _, channel := range res.Channels {
+			u.channels = append(u.channels, string(channel))
+		}
 	}
-	bodyBytes, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		return errors.New("auth request parse failed: " + err.Error())
-	}
-	res := AuthChannels{}
-	json.Unmarshal(bodyBytes, &res)
-	for _, channel := range res.Channels {
-		u.channels = append(u.channels, string(channel))
-	}
-
 	subs.sub(u)
 
 	return nil
@@ -275,7 +279,7 @@ func (s *Store) findAndDeliver(redisChannel string, content string) {
 		Content:    content,
 	}
 	for _, u := range s.Users {
-		if "all" == redisChannel {
+		if "public.all" == redisChannel {
 			if err := u.conn.WriteJSON(m); err != nil {
 				log.Printf("error on message delivery through ws. e: %s\n", err)
 			} else {
