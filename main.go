@@ -22,7 +22,7 @@ var (
 	}
 	serverAddress = ":8081"
 	subs          = subscribscription{
-		channels: []string{},
+		Channels: []string{},
 	}
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -48,11 +48,12 @@ type Message struct {
 }
 
 type AuthChannels struct {
-	Channels []string `json:"data"`
+	Channels []string `json:"Channels"`
 }
 
 type subscribscription struct {
-	channels []string
+	Channels []string `json:"Channels"`
+	sync.Mutex
 }
 
 func init() {
@@ -121,12 +122,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	trackId := r.URL.Path[len("/api/ws/"):]
 	u := gStore.newUser(conn, trackId)
-	go func(u *User) {
-		err := u.subscribeUser(r)
-		if err != nil {
-			log.Printf("%s\n" + err.Error())
-		}
-	}(u)
+	err = u.subscribeUser(r)
+	if err != nil {
+		log.Printf("%s\n" + err.Error())
+	}
 
 	log.Printf("user %s joined\n", u.ID)
 	i := 0
@@ -154,23 +153,50 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (sch *subscribscription) sub(u *User) error {
-	for _, ch := range u.channels {
-		if err := gPubSubConn.Subscribe(ch); err != nil {
-			return errors.New("redis subscribe error")
+
+SubscriptionLoop:
+	for _, userChannel := range u.channels {
+		for _, subscribedChannel := range sch.Channels {
+			if userChannel == subscribedChannel {
+				log.Printf("has subscribtion %s\n", userChannel)
+				continue SubscriptionLoop
+			}
 		}
-		sch.channels = append(sch.channels, ch)
+		if err := gPubSubConn.Subscribe(userChannel); err != nil {
+			return errors.New("redis subscribe error" + err.Error())
+		}
+
+		sch.Lock()
+		sch.Channels = append(sch.Channels, userChannel)
+		sch.Unlock()
+		log.Printf("subscribed to %s\n", userChannel)
+
 	}
 	return nil
 }
 
 func (sch *subscribscription) unsub(u *User) error {
-	for _, ch := range u.channels {
-		if err := gPubSubConn.Unsubscribe(ch); err != nil {
+UnSubscriptionLoop:
+	for _, userChannel := range u.channels {
+		for _, user := range gStore.Users {
+			if user.ID != u.ID {
+				for _, otherUsersChannel := range user.channels {
+					if userChannel  == otherUsersChannel{
+						log.Printf("another user subscribed to \"%s\" channel\n", userChannel)
+						continue UnSubscriptionLoop
+					}
+				}
+			}
+		}
+
+		if err := gPubSubConn.Unsubscribe(userChannel); err != nil {
 			return errors.New("redis unsubscribe error")
 		}
-		for s, cha := range sch.channels {
-			if cha == ch {
-				sch.channels = append(sch.channels[:s], sch.channels[s+1:]...)
+		for s, cha := range sch.Channels {
+			if cha == userChannel {
+				sch.Lock()
+				sch.Channels = append(sch.Channels[:s], sch.Channels[s+1:]...)
+				sch.Unlock()
 			}
 		}
 	}
@@ -205,21 +231,21 @@ func (u *User) subscribeUser(r *http.Request) error {
 	response, err := netClient.Do(req)
 
 	if err != nil {
-		return errors.New("auth request failed")
+		return errors.New("auth request failed: " + err.Error())
 	}
 
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return errors.New("auth request failed")
+		return errors.New("auth request got wrong http code: " + string(http.StatusOK))
 	}
 	bodyBytes, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		return errors.New("auth request parse failed")
+		return errors.New("auth request parse failed: " + err.Error())
 	}
 	res := AuthChannels{}
 	json.Unmarshal(bodyBytes, &res)
 	for _, channel := range res.Channels {
-		u.channels = append(u.channels, channel)
+		u.channels = append(u.channels, string(channel))
 	}
 
 	subs.sub(u)
