@@ -18,9 +18,11 @@ import (
 var (
 	gStore      *Store
 	gPubSubConn *redis.PubSubConn
+	redisAddress string
 	gRedisConn  = func() (redis.Conn, error) {
-		return redis.Dial("tcp", ":6378")
+		return redis.Dial("tcp", redisAddress)
 	}
+	serverAddress string
 	authUrl string
 	//publicChannelsUrl string
 	subs = subscribscription{
@@ -96,9 +98,14 @@ func (s *Store) removeUser(u *User) {
 
 func main() {
 
-	redisServerAddress := *flag.String(
-		"redisConnection",
+	serverAddress = *flag.String(
+		"serverAddress",
 		":8081",
+		"redis connection",
+	)
+	redisAddress = *flag.String(
+		"redisAddress",
+		":6379",
 		"redis connection",
 	)
 	authUrl = *flag.String(
@@ -106,6 +113,9 @@ func main() {
 		"http://localhost:8003/api/broadcast/myChannels",
 		"auth url",
 	)
+
+	flag.Parse()
+
 
 	//publicChannelsUrl = *flag.String(
 	//	"publicChannelsUrl",
@@ -129,8 +139,8 @@ func main() {
 
 	http.HandleFunc("/api/ws/", wsHandler)
 
-	log.Printf("server started at %s\n", redisServerAddress)
-	log.Fatal(http.ListenAndServe(redisServerAddress, nil))
+	log.Printf("server started at %s\n", serverAddress)
+	log.Fatal(http.ListenAndServe(serverAddress, nil))
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
