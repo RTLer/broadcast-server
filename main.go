@@ -18,12 +18,12 @@ import (
 var (
 	gStore      *Store
 	gPubSubConn *redis.PubSubConn
-	redisAddress string
+	redisAddress *string
 	gRedisConn  = func() (redis.Conn, error) {
-		return redis.Dial("tcp", redisAddress)
+		return redis.Dial("tcp", *redisAddress)
 	}
-	serverAddress string
-	authUrl string
+	serverAddress *string
+	authUrl *string
 	//publicChannelsUrl string
 	subs = subscribscription{
 		Channels: []string{},
@@ -98,24 +98,23 @@ func (s *Store) removeUser(u *User) {
 
 func main() {
 
-	serverAddress = *flag.String(
+	serverAddress = flag.String(
 		"serverAddress",
 		":8081",
 		"redis connection",
 	)
-	redisAddress = *flag.String(
+	redisAddress = flag.String(
 		"redisAddress",
 		":6379",
 		"redis connection",
 	)
-	authUrl = *flag.String(
+	authUrl = flag.String(
 		"authUrl",
 		"http://localhost:8003/api/broadcast/myChannels",
 		"auth url",
 	)
 
 	flag.Parse()
-
 
 	//publicChannelsUrl = *flag.String(
 	//	"publicChannelsUrl",
@@ -139,8 +138,8 @@ func main() {
 
 	http.HandleFunc("/api/ws/", wsHandler)
 
-	log.Printf("server started at %s\n", serverAddress)
-	log.Fatal(http.ListenAndServe(serverAddress, nil))
+	log.Printf("server started at %s\n", *serverAddress)
+	log.Fatal(http.ListenAndServe(*serverAddress, nil))
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +257,7 @@ func (u *User) subscribeUser(r *http.Request) error {
 			Transport: netTransport,
 		}
 
-		req, _ := http.NewRequest("GET", authUrl, nil)
+		req, _ := http.NewRequest("GET", *authUrl, nil)
 		req.Header.Set("Authorization", auth)
 		response, err := netClient.Do(req)
 
