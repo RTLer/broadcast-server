@@ -12,6 +12,7 @@ import (
 	"net"
 	"io/ioutil"
 	"encoding/json"
+	"flag"
 )
 
 var (
@@ -20,10 +21,9 @@ var (
 	gRedisConn  = func() (redis.Conn, error) {
 		return redis.Dial("tcp", ":6378")
 	}
-	serverAddress     = ":8081"
-	authUrl           = "http://localhost:8003/api/broadcast/myChannels"
-	//publicChannelsUrl = "http://localhost:8003/api/broadcast/publicChannels"
-	subs              = subscribscription{
+	authUrl string
+	//publicChannelsUrl string
+	subs = subscribscription{
 		Channels: []string{},
 	}
 	upgrader = websocket.Upgrader{
@@ -88,13 +88,31 @@ func (s *Store) removeUser(u *User) {
 	for index, user := range s.Users {
 		if user.ID == u.ID {
 			s.Lock()
-			defer s.Unlock()
 			s.Users = append(s.Users[:index], s.Users[index+1:]...)
+			s.Unlock()
 		}
 	}
 }
 
 func main() {
+
+	redisServerAddress := *flag.String(
+		"redisConnection",
+		":8081",
+		"redis connection",
+	)
+	authUrl = *flag.String(
+		"authUrl",
+		"http://localhost:8003/api/broadcast/myChannels",
+		"auth url",
+	)
+
+	//publicChannelsUrl = *flag.String(
+	//	"publicChannelsUrl",
+	//	"http://localhost:8003/api/broadcast/publicChannels",
+	//	"public channels url",
+	//)
+
 	gRedisConn, err := gRedisConn()
 	if err != nil {
 		panic(err)
@@ -111,8 +129,8 @@ func main() {
 
 	http.HandleFunc("/api/ws/", wsHandler)
 
-	log.Printf("server started at %s\n", serverAddress)
-	log.Fatal(http.ListenAndServe(serverAddress, nil))
+	log.Printf("server started at %s\n", redisServerAddress)
+	log.Fatal(http.ListenAndServe(redisServerAddress, nil))
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
