@@ -16,14 +16,14 @@ import (
 )
 
 var (
-	gStore      *Store
-	gPubSubConn *redis.PubSubConn
+	gStore       *Store
+	gPubSubConn  *redis.PubSubConn
 	redisAddress *string
-	gRedisConn  = func() (redis.Conn, error) {
+	gRedisConn   = func() (redis.Conn, error) {
 		return redis.Dial("tcp", *redisAddress)
 	}
 	serverAddress *string
-	authUrl *string
+	authUrl       *string
 	//publicChannelsUrl string
 	subs = subscribscription{
 		Channels: []string{},
@@ -276,7 +276,7 @@ func (u *User) subscribeUser(r *http.Request) error {
 		res := AuthChannels{}
 		json.Unmarshal(bodyBytes, &res)
 		for _, channel := range res.Channels {
-			u.channels = append(u.channels, string(channel))
+			u.channels = append(u.channels, "private."+string(channel))
 		}
 	}
 	subs.sub(u)
