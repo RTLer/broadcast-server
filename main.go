@@ -1,18 +1,18 @@
 package main
 
 import (
-	"sync"
-	"github.com/gorilla/websocket"
-	"github.com/garyburd/redigo/redis"
-	"net/http"
-	"log"
-	"github.com/satori/go.uuid"
-	"time"
-	"errors"
-	"net"
-	"io/ioutil"
 	"encoding/json"
+	"errors"
 	"flag"
+	"github.com/garyburd/redigo/redis"
+	"github.com/gorilla/websocket"
+	"github.com/satori/go.uuid"
+	"io/ioutil"
+	"log"
+	"net"
+	"net/http"
+	"sync"
+	"time"
 )
 
 var (
@@ -37,6 +37,7 @@ var (
 
 type User struct {
 	ID       string
+	auth     string
 	channels []string
 	conn     *websocket.Conn
 }
@@ -49,6 +50,7 @@ type Store struct {
 type Message struct {
 	DeliveryID string `json:"id"`
 	Content    string `json:"content"`
+	Command    string `json:"command"`
 }
 
 type AuthChannels struct {
@@ -101,7 +103,7 @@ func main() {
 	serverAddress = flag.String(
 		"serverAddress",
 		":8081",
-		"redis connection",
+		"ws address",
 	)
 	redisAddress = flag.String(
 		"redisAddress",
@@ -169,8 +171,31 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				u.conn.Close()
 				break
 			}
+			log.Printf("error %s\n", string(err.Error()))
+
 		} else {
-			log.Printf("message %s\n", string(m.Content))
+			con, _ := json.Marshal(m)
+			log.Printf("message %s\n", con)
+			switch m.Command {
+			case "AUTH":
+				authMUuid, _ := uuid.NewV4()
+				authM := Message{
+					DeliveryID:authMUuid.String(),
+					Content:"auth successful",
+					Command:"AuthSuccess",
+				}
+
+				if err:=u.authUser(r); err != nil{
+					log.Printf("error auth command: %s\n", string(err.Error()))
+					authM.Content = "auth failed"
+					authM.Command = "AuthFailed"
+				}
+
+				if err := u.conn.WriteJSON(authM); err != nil {
+					log.Printf("error on message delivery through ws. e: %s\n", err)
+				}
+				break
+			}
 		}
 
 		if c, err := gRedisConn(); err != nil {
@@ -233,54 +258,66 @@ UnSubscriptionLoop:
 }
 
 func (u *User) subscribeUser(r *http.Request) error {
+	u.prepareAuth(r)
+	subs.sub(u)
+	return nil
+}
+func (u *User) prepareAuth(r *http.Request) error {
 	noAuth := r.URL.Query().Get("noauth")
 	if noAuth == "" {
-		auth := r.Header.Get("Authorization")
-		if auth == "" {
+
+		u.auth = r.Header.Get("Authorization")
+		if u.auth == "" {
 			cookiesAuth, err := r.Cookie("access_token")
 			if err != nil {
-				log.Printf("unauth request %s\n" + err.Error())
-				return errors.New("auth failed")
+				log.Printf("auth request %s\n" , err.Error())
+			}else {
+				u.auth = "Bearer " + cookiesAuth.Value
 			}
-			auth = "Bearer " + cookiesAuth.Value
-		}
-
-		var netTransport = &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout: 5 * time.Second,
-			}).DialContext,
-			TLSHandshakeTimeout: 5 * time.Second,
-		}
-
-		netClient := &http.Client{
-			Timeout:   time.Second * 10,
-			Transport: netTransport,
-		}
-
-		req, _ := http.NewRequest("GET", *authUrl, nil)
-		req.Header.Set("Authorization", auth)
-		response, err := netClient.Do(req)
-
-		if err != nil {
-			return errors.New("auth request failed: " + err.Error())
-		}
-
-		defer response.Body.Close()
-		if response.StatusCode != http.StatusOK {
-			return errors.New("auth request got wrong http code: " + string(http.StatusOK))
-		}
-		bodyBytes, err := ioutil.ReadAll(response.Body)
-		if err != nil {
-			return errors.New("auth request parse failed: " + err.Error())
-		}
-		res := AuthChannels{}
-		json.Unmarshal(bodyBytes, &res)
-		for _, channel := range res.Channels {
-			u.channels = append(u.channels, "private."+string(channel))
 		}
 	}
-	subs.sub(u)
+	return nil
+}
+func (u *User) authUser(r *http.Request) error {
+	log.Printf("auth user")
+	var netTransport = &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout: 5 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout: 5 * time.Second,
+	}
 
+	netClient := &http.Client{
+		Timeout:   time.Second * 10,
+		Transport: netTransport,
+	}
+
+	req, _ := http.NewRequest("GET", *authUrl, nil)
+	req.Header.Set("Authorization", u.auth)
+	response, err := netClient.Do(req)
+	defer response.Body.Close()
+
+	if err != nil {
+		return errors.New("auth request failed: " + err.Error())
+	}
+
+	if response.StatusCode != http.StatusOK {
+		return errors.New("auth request got wrong http code: " + string(http.StatusOK))
+	}
+
+	bodyBytes, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return errors.New("auth request parse failed: " + err.Error())
+	}
+
+	res := AuthChannels{}
+	json.Unmarshal(bodyBytes, &res)
+
+	for _, channel := range res.Channels {
+		u.channels = append(u.channels, "private."+string(channel))
+	}
+
+	subs.sub(u)
 	return nil
 }
 
