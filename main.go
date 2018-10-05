@@ -37,7 +37,6 @@ var (
 
 type User struct {
 	ID       string
-	auth     string
 	channels []string
 	conn     *websocket.Conn
 }
@@ -48,9 +47,10 @@ type Store struct {
 }
 
 type Message struct {
-	DeliveryID string `json:"id"`
-	Content    string `json:"content"`
-	Command    string `json:"command"`
+	DeliveryID string      `json:"id"`
+	Content    string      `json:"content"`
+	Command    string      `json:"command"`
+	Data       interface{} `json:"data"`
 }
 
 type AuthChannels struct {
@@ -177,15 +177,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			con, _ := json.Marshal(m)
 			log.Printf("message %s\n", con)
 			switch m.Command {
-			case "AUTH":
+			case "auth":
 				authMUuid, _ := uuid.NewV4()
 				authM := Message{
-					DeliveryID:authMUuid.String(),
-					Content:"auth successful",
-					Command:"AuthSuccess",
+					DeliveryID: authMUuid.String(),
+					Content:    "auth successful",
+					Command:    "AuthSuccess",
 				}
 
-				if err:=u.authUser(r); err != nil{
+				if err := u.authUser(r, m); err != nil {
 					log.Printf("error auth command: %s\n", string(err.Error()))
 					authM.Content = "auth failed"
 					authM.Command = "AuthFailed"
@@ -258,27 +258,10 @@ UnSubscriptionLoop:
 }
 
 func (u *User) subscribeUser(r *http.Request) error {
-	u.prepareAuth(r)
 	subs.sub(u)
 	return nil
 }
-func (u *User) prepareAuth(r *http.Request) error {
-	noAuth := r.URL.Query().Get("noauth")
-	if noAuth == "" {
-
-		u.auth = r.Header.Get("Authorization")
-		if u.auth == "" {
-			cookiesAuth, err := r.Cookie("access_token")
-			if err != nil {
-				log.Printf("auth request %s\n" , err.Error())
-			}else {
-				u.auth = "Bearer " + cookiesAuth.Value
-			}
-		}
-	}
-	return nil
-}
-func (u *User) authUser(r *http.Request) error {
+func (u *User) authUser(r *http.Request, m Message) error {
 	log.Printf("auth user")
 	var netTransport = &http.Transport{
 		DialContext: (&net.Dialer{
@@ -293,7 +276,7 @@ func (u *User) authUser(r *http.Request) error {
 	}
 
 	req, _ := http.NewRequest("GET", *authUrl, nil)
-	req.Header.Set("Authorization", u.auth)
+	req.Header.Set("Authorization", m.Content)
 	response, err := netClient.Do(req)
 	defer response.Body.Close()
 
