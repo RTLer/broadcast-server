@@ -62,8 +62,13 @@ func (m *Message) sign() {
 
 }
 
+type WebhookMessage struct {
+	UserId  string  `json:"user_id"`
+	Message Message `json:"message"`
+}
+
 type AuthChannels struct {
-	UserId string `json:"user_id"`
+	UserId   string   `json:"user_id"`
 	Channels []string `json:"Channels"`
 }
 
@@ -210,7 +215,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				break
 			default:
-				callWebhook(m)
+				callWebhook(u, m)
 				log.Printf("message %s\n", content)
 			}
 		}
@@ -326,7 +331,7 @@ func (u *User) authUser(r *http.Request, m Message) error {
 	subs.sub(u)
 	return nil
 }
-func callWebhook(m Message) error {
+func callWebhook(u *User, m Message) error {
 	var netTransport = &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout: 60 * time.Second,
@@ -338,7 +343,11 @@ func callWebhook(m Message) error {
 		Timeout:   time.Second * 60,
 		Transport: netTransport,
 	}
-	postData, _ := json.Marshal(m)
+	webhookMessage := WebhookMessage{
+		UserId:  u.userId,
+		Message: m,
+	}
+	postData, _ := json.Marshal(webhookMessage)
 	req, _ := http.NewRequest("POST", *webhookUrl, bytes.NewBuffer(postData))
 	req.Header.Set("Content-Type", "application/json")
 	go requestHandler(netClient, req)
