@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -24,6 +25,7 @@ var (
 	}
 	serverAddress *string
 	authUrl       *string
+	webhookUrl    *string
 	//publicChannelsUrl string
 	subs = subscribscription{
 		Channels: []string{},
@@ -37,6 +39,7 @@ var (
 
 type User struct {
 	ID       string
+	userId   string
 	channels []string
 	conn     *websocket.Conn
 }
@@ -53,7 +56,14 @@ type Message struct {
 	Data       interface{} `json:"data"`
 }
 
+func (m *Message) sign() {
+	deliveryUuid, _ := uuid.NewV4()
+	m.DeliveryID = deliveryUuid.String()
+
+}
+
 type AuthChannels struct {
+	UserId string `json:"user_id"`
 	Channels []string `json:"Channels"`
 }
 
@@ -116,6 +126,12 @@ func main() {
 		"auth url",
 	)
 
+	webhookUrl = flag.String(
+		"webhookUrl",
+		"http://localhost:8080/api/broadcast/webhook",
+		"webhook url",
+	)
+
 	flag.Parse()
 
 	//publicChannelsUrl = *flag.String(
@@ -174,16 +190,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			log.Printf("error %s\n", string(err.Error()))
 
 		} else {
-			con, _ := json.Marshal(m)
-			log.Printf("message %s\n", con)
+			content, _ := json.Marshal(m)
 			switch m.Command {
 			case "auth":
-				authMUuid, _ := uuid.NewV4()
 				authM := Message{
-					DeliveryID: authMUuid.String(),
-					Content:    "auth successful",
-					Command:    "AuthSuccess",
+					Content: "auth successful",
+					Command: "AuthSuccess",
 				}
+				authM.sign()
 
 				if err := u.authUser(r, m); err != nil {
 					log.Printf("error auth command: %s\n", string(err.Error()))
@@ -195,6 +209,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					log.Printf("error on message delivery through ws. e: %s\n", err)
 				}
 				break
+			default:
+				callWebhook(m)
+				log.Printf("message %s\n", content)
 			}
 		}
 
@@ -275,14 +292,16 @@ func (u *User) authUser(r *http.Request, m Message) error {
 		Transport: netTransport,
 	}
 
-	req, _ := http.NewRequest("GET", *authUrl, nil)
-	req.Header.Set("Authorization", m.Content)
+	postData, _ := json.Marshal(m)
+	req, _ := http.NewRequest("POST", *authUrl, bytes.NewBuffer(postData))
+	req.Header.Set("Content-Type", "application/json")
 	response, err := netClient.Do(req)
-	defer response.Body.Close()
 
 	if err != nil {
 		return errors.New("auth request failed: " + err.Error())
 	}
+
+	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
 		return errors.New("auth request got wrong http code: " + string(http.StatusOK))
@@ -293,15 +312,55 @@ func (u *User) authUser(r *http.Request, m Message) error {
 		return errors.New("auth request parse failed: " + err.Error())
 	}
 
-	res := AuthChannels{}
-	json.Unmarshal(bodyBytes, &res)
+	authRes := AuthChannels{}
+	json.Unmarshal(bodyBytes, &authRes)
 
-	for _, channel := range res.Channels {
+	if authRes.UserId != "" {
+		u.userId = authRes.UserId
+	}
+
+	for _, channel := range authRes.Channels {
 		u.channels = append(u.channels, "private."+string(channel))
 	}
 
 	subs.sub(u)
 	return nil
+}
+func callWebhook(m Message) error {
+	var netTransport = &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout: 60 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout: 60 * time.Second,
+	}
+
+	netClient := &http.Client{
+		Timeout:   time.Second * 60,
+		Transport: netTransport,
+	}
+	postData, _ := json.Marshal(m)
+	req, _ := http.NewRequest("POST", *webhookUrl, bytes.NewBuffer(postData))
+	req.Header.Set("Content-Type", "application/json")
+	go requestHandler(netClient, req)
+	return nil
+}
+
+func requestHandler(netClient *http.Client, req *http.Request) {
+	response, err := netClient.Do(req)
+	if err != nil {
+		log.Printf("retry http request: " + err.Error())
+		time.Sleep(2 * time.Second)
+		go requestHandler(netClient, req)
+		return
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		log.Printf("got wrong http code(retry): " + string(http.StatusOK))
+		time.Sleep(2 * time.Second)
+		go requestHandler(netClient, req)
+		return
+	}
 }
 
 func deliverMessages() {
@@ -320,11 +379,10 @@ func deliverMessages() {
 }
 
 func (s *Store) findAndDeliver(redisChannel string, content string) {
-	deliveryUuid, _ := uuid.NewV4()
 	m := Message{
-		DeliveryID: deliveryUuid.String(),
-		Content:    content,
+		Content: content,
 	}
+	m.sign()
 	for _, u := range s.Users {
 		if "public.all" == redisChannel {
 			if err := u.conn.WriteJSON(m); err != nil {
