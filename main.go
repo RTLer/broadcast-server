@@ -67,6 +67,12 @@ type WebhookMessage struct {
 	Message Message `json:"message"`
 }
 
+type authInfo struct {
+	UserId   string `json:"user_id"`
+	ClientId string `json:"client_id"`
+	Otp      string `json:"otp"`
+}
+
 type AuthChannels struct {
 	UserId   string   `json:"user_id"`
 	Channels []string `json:"Channels"`
@@ -127,7 +133,7 @@ func main() {
 	)
 	authUrl = flag.String(
 		"authUrl",
-		"http://localhost:8003/api/broadcast/myChannels",
+		"http://localhost:8080/api/broadcast/auth",
 		"auth url",
 	)
 
@@ -160,9 +166,39 @@ func main() {
 	go deliverMessages()
 
 	http.HandleFunc("/api/ws/", wsHandler)
+	http.HandleFunc("/api/ws/auth", authHandler)
 
 	log.Printf("server started at %s\n", *serverAddress)
 	log.Fatal(http.ListenAndServe(*serverAddress, nil))
+}
+
+func authHandler(w http.ResponseWriter, r *http.Request) {
+	decoder := json.NewDecoder(r.Body)
+
+	var data authInfo
+	err := decoder.Decode(&data)
+	if err != nil {
+		log.Printf(err.Error())
+	}
+
+
+	if data.ClientId != "" {
+		for _, u := range gStore.Users {
+			if u.ID == data.ClientId {
+				u.userId = data.ClientId
+				if data.Otp != "" {
+					clientIdM := Message{
+						Content: data.Otp,
+						Command: "Otp",
+					}
+					clientIdM.sign()
+					if err := u.conn.WriteJSON(clientIdM); err != nil {
+						log.Printf("error on message delivery through ws. e: %s\n", err)
+					}
+				}
+			}
+		}
+	}
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -174,9 +210,18 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	trackId := r.URL.Path[len("/api/ws/"):]
 	u := gStore.newUser(conn, trackId)
-	err = u.subscribeUser(r)
+	err = subs.sub(u)
 	if err != nil {
 		log.Printf("%s\n" + err.Error())
+	}
+
+	clientIdM := Message{
+		Content: u.ID,
+		Command: "ClientID",
+	}
+	clientIdM.sign()
+	if err := u.conn.WriteJSON(clientIdM); err != nil {
+		log.Printf("error on message delivery through ws. e: %s\n", err)
 	}
 
 	log.Printf("user %s joined\n", u.ID)
@@ -215,9 +260,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				break
 			default:
-				callWebhook(u, m)
-				log.Printf("message %s\n", content)
+				go callWebhook(u, m)
 			}
+			log.Printf("message %s\n", content)
 		}
 
 		if c, err := gRedisConn(); err != nil {
@@ -279,10 +324,6 @@ UnSubscriptionLoop:
 	return nil
 }
 
-func (u *User) subscribeUser(r *http.Request) error {
-	subs.sub(u)
-	return nil
-}
 func (u *User) authUser(r *http.Request, m Message) error {
 	log.Printf("auth user")
 	var netTransport = &http.Transport{
@@ -350,7 +391,7 @@ func callWebhook(u *User, m Message) error {
 	postData, _ := json.Marshal(webhookMessage)
 	req, _ := http.NewRequest("POST", *webhookUrl, bytes.NewBuffer(postData))
 	req.Header.Set("Content-Type", "application/json")
-	go requestHandler(netClient, req)
+	requestHandler(netClient, req)
 	return nil
 }
 
@@ -358,16 +399,16 @@ func requestHandler(netClient *http.Client, req *http.Request) {
 	response, err := netClient.Do(req)
 	if err != nil {
 		log.Printf("retry http request: " + err.Error())
-		time.Sleep(2 * time.Second)
-		go requestHandler(netClient, req)
+		time.Sleep(5 * time.Second)
+		requestHandler(netClient, req)
 		return
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
 		log.Printf("got wrong http code(retry): " + string(http.StatusOK))
-		time.Sleep(2 * time.Second)
-		go requestHandler(netClient, req)
+		time.Sleep(5 * time.Second)
+		requestHandler(netClient, req)
 		return
 	}
 }
@@ -377,7 +418,7 @@ func deliverMessages() {
 		switch v := gPubSubConn.Receive().(type) {
 		case redis.Message:
 			log.Printf("subscription message: %s: %s\n", v.Channel, v.Data)
-			gStore.findAndDeliver(v.Channel, string(v.Data))
+			go gStore.findAndDeliver(v.Channel, string(v.Data))
 		case redis.Subscription:
 			log.Printf("subscription message: %s: %s %d\n", v.Channel, v.Kind, v.Count)
 		case error:
