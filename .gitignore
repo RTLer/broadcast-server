@@ -1,2 +1,5 @@
 /.idea
 broadcast-server
+broadcast-server.darwin.amd64
+broadcast-server.linux.amd64
+broadcast-server.windows.amd64.exe
