@@ -75,7 +75,7 @@ type authInfo struct {
 
 type AuthChannels struct {
 	UserId   string   `json:"user_id"`
-	Channels []string `json:"Channels"`
+	Channels []string `json:"channels"`
 }
 
 type subscribscription struct {
@@ -373,6 +373,19 @@ func (u *User) authUser(r *http.Request, m Message) error {
 	return nil
 }
 func callWebhook(u *User, m Message) error {
+
+	webhookMessage := WebhookMessage{
+		UserId:  u.userId,
+		Message: m,
+	}
+	postData, _ := json.Marshal(webhookMessage)
+	req, _ := http.NewRequest("POST", *webhookUrl, bytes.NewBuffer(postData))
+	req.Header.Set("Content-Type", "application/json")
+	requestHandler(req)
+	return nil
+}
+
+func requestHandler(req *http.Request) {
 	var netTransport = &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout: 60 * time.Second,
@@ -384,31 +397,19 @@ func callWebhook(u *User, m Message) error {
 		Timeout:   time.Second * 60,
 		Transport: netTransport,
 	}
-	webhookMessage := WebhookMessage{
-		UserId:  u.userId,
-		Message: m,
-	}
-	postData, _ := json.Marshal(webhookMessage)
-	req, _ := http.NewRequest("POST", *webhookUrl, bytes.NewBuffer(postData))
-	req.Header.Set("Content-Type", "application/json")
-	requestHandler(netClient, req)
-	return nil
-}
-
-func requestHandler(netClient *http.Client, req *http.Request) {
 	response, err := netClient.Do(req)
 	if err != nil {
-		log.Printf("retry http request: " + err.Error())
+		log.Printf("retry http request: %s\n", err.Error())
 		time.Sleep(5 * time.Second)
-		requestHandler(netClient, req)
+		requestHandler(req)
 		return
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		log.Printf("got wrong http code(retry): " + string(http.StatusOK))
+		log.Printf("got wrong http code(retry): %s\n" ,string(http.StatusOK))
 		time.Sleep(5 * time.Second)
-		requestHandler(netClient, req)
+		requestHandler(req)
 		return
 	}
 }
@@ -431,7 +432,7 @@ func deliverMessages() {
 func (s *Store) findAndDeliver(redisChannel string, content []byte) {
 	m := Message{}
 	if err := json.Unmarshal(content, &m);err != nil{
-		log.Printf("message format is not valid: %s",string(content))
+		log.Printf("message format is not valid: %s\n",string(content))
 		return
 	}
 	m.sign()
