@@ -1,0 +1,29 @@
+language: go
+go:
+- 1.10.x
+before_install:
+- go get github.com/mitchellh/gox
+install:
+- 
+script:
+- go get -t -v ./...
+- diff -u <(echo -n) <(gofmt -d .)
+- go vet $(go list ./... | grep -v /vendor/)
+- if [ "${LATEST}" = "true" ]; then gox -os="linux darwin windows" -arch="amd64" -output="broadcast-server.."
+  -ldflags "-X main.Rev=`git rev-parse --short HEAD`" -verbose ./...; fi
+deploy:
+  provider: releases
+  api_key:
+    secure: W6G+fq5r1+lyrNfatcmTaY94TzvWdMpCePg987PJ8vekTT2onxC08/Yqspvfx+qwyH2g79Z96pazWKYJ/9q1fVIvYh61cnz0XaFc24+A5iV2ifi2ONR12t8RDcM4ULLbOMneKZ7JrvQbLtZX4vC1nqR5W0UWKXzVRAhPIjuoBEeNg8O6TUUyIUuT30Plu+OujzVK7Y/TiWfqyqdmTt/kTQoa3+Xiw1eFWUBsBG/K/UeeDqtKRmzxzW4SLjSX/lpkXGixHGrwbLJ6lepY4IxII87VkXbXxU/ONtj+jGaqrRN2F8lv1dnzqm7v6j+KgPkAefQDIxXaBuSie/lnI6vqHGOjZi4UoYlR//uY/xZnT5hWkh4DQgl1y5N3KfBcLItZ0UQyBl0n5WRfHpwkN0wkzBH7eP2I6BJZNeAnk7xqYRYB4jTJZtdnumMRD6gGEyJ5U5ZKDVa98k7dahhuvFGO4q+suCQZpb9wFKllPVM1mstnR4V8hJuw+gouhP1K2DFAXXvCHTOSUEq0fxL3acnhpREg+vF1NcSwNG9//9WSOJwod65d6tJbj/aEXxaGagIv4skwbPP3ezeJoqulrqOeVYrt5BCw6jn0Cl6MUgVCaNm9oqi6+BGDxW2nAAhXt6ox9GyJYROI6pryjaFWhT8XgBzVSgEj87dncbf4DI/d+gU=
+  skip_cleanup: true
+  file:
+  # The names of the binaries to output, based on the -output template passed to gox.
+  - broadcast-server.windows.amd64.exe
+  - broadcast-server.darwin.amd64
+  - broadcast-server.linux.amd64
+  on:
+    # What to repository to build
+    repo: RTLer/broadcast-server
+    # Only build binaries for tagged commits
+    tags: true
+    condition: $LATEST = true
