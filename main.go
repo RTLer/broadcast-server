@@ -93,7 +93,9 @@ func (s *Store) newUser(conn *websocket.Conn, trackId string) *User {
 	userUuid, _ := uuid.NewV4()
 	var channels []string
 	if trackId != "" {
-		channels = []string{"direct." + trackId}
+		channels = []string{"direct." + userUuid.String(), "direct." + trackId}
+	} else {
+		channels = []string{"direct." + userUuid.String()}
 	}
 
 	u := &User{
@@ -180,7 +182,6 @@ func authHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf(err.Error())
 	}
-
 
 	if data.ClientId != "" {
 		for _, u := range gStore.Users {
@@ -291,7 +292,6 @@ SubscriptionLoop:
 		sch.Channels = append(sch.Channels, userChannel)
 		sch.Unlock()
 		log.Printf("subscribed to %s\n", userChannel)
-
 	}
 	return nil
 }
@@ -418,7 +418,7 @@ func deliverMessages() {
 		switch v := gPubSubConn.Receive().(type) {
 		case redis.Message:
 			log.Printf("subscription message: %s: %s\n", v.Channel, v.Data)
-			go gStore.findAndDeliver(v.Channel, string(v.Data))
+			go gStore.findAndDeliver(v.Channel, v.Data)
 		case redis.Subscription:
 			log.Printf("subscription message: %s: %s %d\n", v.Channel, v.Kind, v.Count)
 		case error:
@@ -428,9 +428,11 @@ func deliverMessages() {
 	}
 }
 
-func (s *Store) findAndDeliver(redisChannel string, content string) {
-	m := Message{
-		Content: content,
+func (s *Store) findAndDeliver(redisChannel string, content []byte) {
+	m := Message{}
+	if err := json.Unmarshal(content, &m);err != nil{
+		log.Printf("message format is not valid: %s",string(content))
+		return
 	}
 	m.sign()
 	for _, u := range s.Users {
