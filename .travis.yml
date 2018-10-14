@@ -1,14 +1,17 @@
 language: go
-go:
-- 1.10.x
+sudo: false
+matrix:
+  include:
+    - go: 1.10.x
+      env: LATEST=true
 before_install:
-- go get github.com/mitchellh/gox
+  - go get github.com/mitchellh/gox
 install:
-- 
+  - # skip
 script:
-- go get -t -v ./...
-- go vet $(go list ./... | grep -v /vendor/)
-- if [ "${LATEST}" = "true" ]; then gox -os="linux darwin windows" -arch="amd64" -output="broadcast-server.{{.OS}}.{{.Arch}}" -ldflags "-X main.Rev=`git rev-parse --short HEAD`" -verbose ./...; fi
+  - go get -t -v ./...
+  - go vet $(go list ./... | grep -v /vendor/)
+  - if [ "${LATEST}" = "true" ]; then gox -os="linux darwin windows" -arch="amd64" -output="broadcast-server.{{.OS}}.{{.Arch}}" -ldflags "-X main.Rev=`git rev-parse --short HEAD`" -verbose ./...; fi
 deploy:
   provider: releases
   api_key:
@@ -16,9 +19,9 @@ deploy:
   skip_cleanup: true
   file:
   # The names of the binaries to output, based on the -output template passed to gox.
-  - broadcast-server.windows.amd64.exe
-  - broadcast-server.darwin.amd64
-  - broadcast-server.linux.amd64
+    - broadcast-server.windows.amd64.exe
+    - broadcast-server.darwin.amd64
+    - broadcast-server.linux.amd64
   on:
     # What to repository to build
     repo: RTLer/broadcast-server
