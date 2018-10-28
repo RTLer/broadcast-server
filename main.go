@@ -67,6 +67,10 @@ type WebhookMessage struct {
 	Message Message `json:"message"`
 }
 
+type StatsData struct {
+	UserCount  int  `json:"user_count"`
+}
+
 type authInfo struct {
 	UserId   string `json:"user_id"`
 	ClientId string `json:"client_id"`
@@ -169,9 +173,23 @@ func main() {
 
 	http.HandleFunc("/api/ws/", wsHandler)
 	http.HandleFunc("/api/ws/auth", authHandler)
+	http.HandleFunc("/api/ws/internal/stats", statsHandler)
 
 	log.Printf("server started at %s\n", *serverAddress)
 	log.Fatal(http.ListenAndServe(*serverAddress, nil))
+}
+
+func statsHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println(len(gStore.Users))
+	statsMessage := Message{
+		Command: "ServerStats",
+		Data:StatsData{
+			UserCount:len(gStore.Users),
+		},
+	}
+	statsMessage.sign()
+	res, _ := json.Marshal(statsMessage)
+	w.Write(res)
 }
 
 func authHandler(w http.ResponseWriter, r *http.Request) {
@@ -407,7 +425,7 @@ func requestHandler(req *http.Request) {
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		log.Printf("got wrong http code(retry): %s\n" ,string(http.StatusOK))
+		log.Printf("got wrong http code(retry): %s\n", string(http.StatusOK))
 		time.Sleep(5 * time.Second)
 		requestHandler(req)
 		return
@@ -431,8 +449,8 @@ func deliverMessages() {
 
 func (s *Store) findAndDeliver(redisChannel string, content []byte) {
 	m := Message{}
-	if err := json.Unmarshal(content, &m);err != nil{
-		log.Printf("message format is not valid: %s\n",string(content))
+	if err := json.Unmarshal(content, &m); err != nil {
+		log.Printf("message format is not valid: %s\n", string(content))
 		return
 	}
 	m.sign()
