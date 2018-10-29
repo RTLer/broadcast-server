@@ -23,9 +23,10 @@ var (
 	gRedisConn   = func() (redis.Conn, error) {
 		return redis.Dial("tcp", *redisAddress)
 	}
-	serverAddress *string
-	authUrl       *string
-	webhookUrl    *string
+	BroadcastStats *bool
+	serverAddress  *string
+	authUrl        *string
+	webhookUrl     *string
 	//publicChannelsUrl string
 	subs = subscribscription{
 		Channels: []string{},
@@ -68,7 +69,7 @@ type WebhookMessage struct {
 }
 
 type StatsData struct {
-	UserCount  int  `json:"user_count"`
+	UserCount int `json:"user_count"`
 }
 
 type authInfo struct {
@@ -127,6 +128,11 @@ func (s *Store) removeUser(u *User) {
 
 func main() {
 
+	BroadcastStats = flag.Bool(
+		"BroadcastStats",
+		false,
+		"Broadcast stats",
+	)
 	serverAddress = flag.String(
 		"serverAddress",
 		":8081",
@@ -181,15 +187,20 @@ func main() {
 
 func statsHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println(len(gStore.Users))
+	statsMessage := setServerStats()
+	res, _ := json.Marshal(statsMessage)
+	w.Write(res)
+}
+
+func setServerStats() Message {
 	statsMessage := Message{
 		Command: "ServerStats",
-		Data:StatsData{
-			UserCount:len(gStore.Users),
+		Data: StatsData{
+			UserCount: len(gStore.Users),
 		},
 	}
 	statsMessage.sign()
-	res, _ := json.Marshal(statsMessage)
-	w.Write(res)
+	return statsMessage
 }
 
 func authHandler(w http.ResponseWriter, r *http.Request) {
@@ -225,6 +236,18 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("upgrader error %s\n", err.Error())
 		return
+	}
+
+	if *BroadcastStats{
+		ticker := time.NewTicker(10 * time.Second)
+		go func() {
+			for range ticker.C {
+				setServerStats()
+				if err := conn.WriteJSON(setServerStats()); err != nil {
+					log.Printf("error on message delivery through ws. e: %s\n", err)
+				}
+			}
+		}()
 	}
 
 	trackId := r.URL.Path[len("/api/ws/"):]
