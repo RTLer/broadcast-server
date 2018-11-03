@@ -175,6 +175,16 @@ func main() {
 		panic(err)
 	}
 
+	if *BroadcastStats{
+		ticker := time.NewTicker(10 * time.Second)
+		go func() {
+			for range ticker.C {
+				statsJson,_:=json.Marshal(setServerStats())
+				go gStore.findAndDeliver("public.all", statsJson)
+			}
+		}()
+	}
+
 	go deliverMessages()
 
 	http.HandleFunc("/api/ws/", wsHandler)
@@ -238,18 +248,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if *BroadcastStats{
-		ticker := time.NewTicker(10 * time.Second)
-		go func() {
-			for range ticker.C {
-				setServerStats()
-				if err := conn.WriteJSON(setServerStats()); err != nil {
-					log.Printf("error on message delivery through ws. e: %s\n", err)
-				}
-			}
-		}()
-	}
-
 	trackId := r.URL.Path[len("/api/ws/"):]
 	u := gStore.newUser(conn, trackId)
 	err = subs.sub(u)
@@ -282,7 +280,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			log.Printf("error %s\n", string(err.Error()))
 
 		} else {
-			content, _ := json.Marshal(m)
+			//content, _ := json.Marshal(m)
 			switch m.Command {
 			case "auth":
 				authM := Message{
@@ -304,7 +302,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			default:
 				go callWebhook(u, m)
 			}
-			log.Printf("message %s\n", content)
 		}
 
 		if c, err := gRedisConn(); err != nil {
@@ -481,8 +478,6 @@ func (s *Store) findAndDeliver(redisChannel string, content []byte) {
 		if "public.all" == redisChannel {
 			if err := u.conn.WriteJSON(m); err != nil {
 				log.Printf("error on message delivery through ws. e: %s\n", err)
-			} else {
-				log.Printf("user %s found at our store, message sent\n", redisChannel)
 			}
 			continue
 		} else {
@@ -490,8 +485,6 @@ func (s *Store) findAndDeliver(redisChannel string, content []byte) {
 				if channel == redisChannel {
 					if err := u.conn.WriteJSON(m); err != nil {
 						log.Printf("error on message delivery through ws. e: %s\n", err)
-					} else {
-						log.Printf("user %s found at our store, message sent\n", redisChannel)
 					}
 				}
 			}
