@@ -473,7 +473,6 @@ func (s *Store) findAndDeliver(redisChannel string, content []byte) {
 		log.Printf("message format is not valid: %s\n", string(content))
 		return
 	}
-	m.sign()
 	for _, u := range s.Users {
 		if "public.all" == redisChannel {
 			if err := u.conn.WriteJSON(m); err != nil {
