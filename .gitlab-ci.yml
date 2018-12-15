@@ -1,0 +1,40 @@
+image: golang:1.11-alpine
+stages:
+- build
+
+cache:
+  paths:
+  - /apt-cache
+  - /go/src/github.com
+  - /go/src/golang.org
+  - /go/src/google.golang.org
+  - /go/src/gopkg.in
+
+before_script:
+
+build_prod:
+  stage: build
+  script:
+  - mkdir -p /go/src/gitlab.zarinpal.com/zarinpal
+  - cp -r $CI_PROJECT_DIR /go/src/gitlab.zarinpal.com/zarinpal/broadcast-server
+  - cd /go/src/gitlab.zarinpal.com/zarinpal/broadcast-server
+  - go get -d -v ./...
+  - env GOOS=linux GOARCH=386 go build -o build/app
+  - docker build  -f docker/Dockerfile -t gitlab.zarinpal.com:5555/zarinpal/broadcast-server:latest .
+  - docker push gitlab.zarinpal.com:5555/zarinpal/broadcast-server:latest
+  only:
+  - release
+
+build_stg:
+  stage: build
+  script:
+  - mkdir -p /go/src/gitlab.zarinpal.com/zarinpal
+  - cp -r $CI_PROJECT_DIR /go/src/gitlab.zarinpal.com/zarinpal/broadcast-server
+  - cd /go/src/gitlab.zarinpal.com/zarinpal/broadcast-server
+  - go get -d -v ./...
+  - env GOOS=linux GOARCH=386 go build -o build/app
+  - docker build  -f docker/Dockerfile -t gitlab.zarinpal.com:5555/zarinpal/broadcast-server:stg-$CI_PIPELINE_IID .
+  - docker push gitlab.zarinpal.com:5555/zarinpal/broadcast-server:stg-$CI_PIPELINE_IID
+  only:
+  - master
+
