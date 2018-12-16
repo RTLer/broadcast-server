@@ -1,0 +1,9 @@
+FROM golang:1.11-alpine
+
+RUN apk add --no-cache bash git openssh
+
+WORKDIR /go/src/gitlab.zarinpal.com/zarinpal/broadcast-server
+COPY ./ ./
+RUN go get -d -v ./...
+VOLUME ["/go/src/gitlab.zarinpal.com/zarinpal/broadcast-server"]
+CMD ["env", "GOOS=linux", "GOARCH=386", "go", "build", "-o", "build/app"]

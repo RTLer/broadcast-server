@@ -1,4 +1,4 @@
-image: golang:1.11-alpine
+image: docker:18
 stages:
 - build
 
@@ -11,16 +11,14 @@ cache:
   - /go/src/gopkg.in
 
 before_script:
+- rm -rf build/
 
 build_prod:
   stage: build
   script:
-  - mkdir -p /go/src/gitlab.zarinpal.com/zarinpal
-  - cp -r $CI_PROJECT_DIR /go/src/gitlab.zarinpal.com/zarinpal/broadcast-server
-  - cd /go/src/gitlab.zarinpal.com/zarinpal/broadcast-server
-  - go get -d -v ./...
-  - env GOOS=linux GOARCH=386 go build -o build/app
-  - docker build  -f docker/Dockerfile -t gitlab.zarinpal.com:5555/zarinpal/broadcast-server:latest .
+  - docker build  -f $(pwd)/docker/Dockerfile_build -t broadcast-server-build:latest .
+  - docker run -v $(pwd)/:/go/src/gitlab.zarinpal.com/zarinpal/broadcast-server broadcast-server-build:latest
+  - docker build  -f $(pwd)/docker/Dockerfile -t gitlab.zarinpal.com:5555/zarinpal/broadcast-server:latest .
   - docker push gitlab.zarinpal.com:5555/zarinpal/broadcast-server:latest
   only:
   - release
@@ -28,11 +26,8 @@ build_prod:
 build_stg:
   stage: build
   script:
-  - mkdir -p /go/src/gitlab.zarinpal.com/zarinpal
-  - cp -r $CI_PROJECT_DIR /go/src/gitlab.zarinpal.com/zarinpal/broadcast-server
-  - cd /go/src/gitlab.zarinpal.com/zarinpal/broadcast-server
-  - go get -d -v ./...
-  - env GOOS=linux GOARCH=386 go build -o build/app
+  - docker build  -f docker/Dockerfile_build -t broadcast-server-build:latest .
+  - docker run -v $(pwd)/:/go/src/gitlab.zarinpal.com/zarinpal/broadcast-server broadcast-server-build:latest
   - docker build  -f docker/Dockerfile -t gitlab.zarinpal.com:5555/zarinpal/broadcast-server:stg-$CI_PIPELINE_IID .
   - docker push gitlab.zarinpal.com:5555/zarinpal/broadcast-server:stg-$CI_PIPELINE_IID
   only:
