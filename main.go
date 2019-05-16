@@ -417,13 +417,15 @@ func callWebhook(u *User, m Message) error {
 		Message: m,
 	}
 	postData, _ := json.Marshal(webhookMessage)
-	req, _ := http.NewRequest("POST", *webhookUrl, bytes.NewBuffer(postData))
-	req.Header.Set("Content-Type", "application/json")
-	requestHandler(req)
+	requestHandler(postData)
 	return nil
 }
 
-func requestHandler(req *http.Request) {
+func requestHandler(postData []byte) {
+
+	req, _ := http.NewRequest("POST", *webhookUrl, bytes.NewBuffer(postData))
+	req.Header.Set("Content-Type", "application/json")
+
 	var netTransport = &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout: 60 * time.Second,
@@ -439,7 +441,7 @@ func requestHandler(req *http.Request) {
 	if err != nil {
 		log.Printf("retry http request: %s\n", err.Error())
 		time.Sleep(5 * time.Second)
-		requestHandler(req)
+		requestHandler(postData)
 		return
 	}
 	defer response.Body.Close()
@@ -447,7 +449,7 @@ func requestHandler(req *http.Request) {
 	if response.StatusCode != http.StatusOK {
 		log.Printf("got wrong http code(retry): %s\n", string(http.StatusOK))
 		time.Sleep(5 * time.Second)
-		requestHandler(req)
+		requestHandler(postData)
 		return
 	}
 }
