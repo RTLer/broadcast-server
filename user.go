@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"github.com/gorilla/websocket"
 	uuid "github.com/satori/go.uuid"
 	"github.com/sirupsen/logrus"
