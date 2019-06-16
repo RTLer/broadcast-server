@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/garyburd/redigo/redis"
-	"github.com/gorilla/websocket"
-	"github.com/satori/go.uuid"
+	uuid "github.com/satori/go.uuid"
 	"github.com/sirupsen/logrus"
 	"log"
 	"net"
@@ -15,76 +14,10 @@ import (
 	"time"
 )
 
-var (
-	gStore       *Store
-	gPubSubConn  *redis.PubSubConn
-	redisAddress *string
-	gRedisConn   = func() (redis.Conn, error) {
-		return redis.Dial("tcp", *redisAddress)
-	}
-	BroadcastStats *bool
-	serverAddress  *string
-	authUrl        *string
-	webhookUrl     *string
-	//publicChannelsUrl string
-	subs = subscription{
-		Channels: []string{},
-	}
-	upgrader = websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool {
-			return true
-		},
-	}
-
-	reqHandleTryCounter = 1
-)
-
-type Store struct {
-	Users []*User
-	sync.Mutex
-}
-
-type Message struct {
-	DeliveryID string      `json:"id"`
-	Content    string      `json:"content"`
-	Command    string      `json:"command"`
-	Data       interface{} `json:"data"`
-}
-
-type WebhookMessage struct {
-	UserId  string  `json:"user_id"`
-	Message Message `json:"message"`
-}
-
-type StatsData struct {
-	UserCount int `json:"user_count"`
-}
-
-type authInfo struct {
-	UserId   string `json:"user_id"`
-	ClientId string `json:"client_id"`
-	Otp      string `json:"otp"`
-}
-
-type AuthChannels struct {
-	UserId   string   `json:"user_id"`
-	Channels []string `json:"channels"`
-}
-
-type subscription struct {
-	Channels []string `json:"Channels"`
-	sync.Mutex
-}
-
 func init() {
 	gStore = &Store {
 		Users: make([]*User, 0, 1),
 	}
-}
-
-func (m *Message) signMessage() {
-	deliveryUuid, _ := uuid.NewV4()
-	m.DeliveryID = deliveryUuid.String()
 }
 
 func main() {
@@ -114,30 +47,6 @@ func main() {
 
 	logrus.Infof("Server started at %s\n", *serverAddress)
 	logrus.Fatal(http.ListenAndServe(*serverAddress, nil))
-}
-
-func serverStatusTicker() {
-	ticker := time.NewTicker(10 * time.Second)
-
-	go func() {
-		for range ticker.C {
-			statsJson, _ := json.Marshal(getServerStats())
-			go gStore.findAndDeliver("public.all", statsJson)
-		}
-	}()
-}
-
-func getServerStats() Message {
-	statsMessage := Message {
-		Command: "ServerStats",
-		Data: StatsData {
-			UserCount: len(gStore.Users),
-		},
-	}
-
-	statsMessage.signMessage()
-
-	return statsMessage
 }
 
 func statsHandler(w http.ResponseWriter, r *http.Request) {
@@ -326,6 +235,7 @@ SubscriptionLoop:
 		sch.Unlock()
 		logrus.Printf("subscribed to %s\n", userChannel)
 	}
+
 	return nil
 }
 
@@ -406,4 +316,33 @@ func (s *Store) findAndDeliver(redisChannel string, content []byte) {
 			}
 		}
 	}
+}
+
+func (m *Message) signMessage() {
+	deliveryUuid, _ := uuid.NewV4()
+	m.DeliveryID = deliveryUuid.String()
+}
+
+func serverStatusTicker() {
+	ticker := time.NewTicker(10 * time.Second)
+
+	go func() {
+		for range ticker.C {
+			statsJson, _ := json.Marshal(getServerStats())
+			go gStore.findAndDeliver("public.all", statsJson)
+		}
+	}()
+}
+
+func getServerStats() Message {
+	statsMessage := Message {
+		Command: "ServerStats",
+		Data: StatsData {
+			UserCount: len(gStore.Users),
+		},
+	}
+
+	statsMessage.signMessage()
+
+	return statsMessage
 }
