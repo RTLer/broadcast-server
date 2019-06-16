@@ -4,14 +4,33 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/gorilla/websocket"
 	uuid "github.com/satori/go.uuid"
 	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 )
+
+type Store struct {
+	Users []*User
+	sync.Mutex
+}
+
+type authInfo struct {
+	UserId   string `json:"user_id"`
+	ClientId string `json:"client_id"`
+	Otp      string `json:"otp"`
+}
+
+func init() {
+	gStore = &Store {
+		Users: make([]*User, 0, 1),
+	}
+}
 
 type User struct {
 	ID       string
@@ -54,7 +73,6 @@ func (s *Store) RemoveUser(u *User) {
 }
 
 func (u *User) authUser(r *http.Request, m Message) error {
-	logrus.Info("Auth User")
 	var netTransport = &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout: 5 * time.Second,
@@ -79,7 +97,7 @@ func (u *User) authUser(r *http.Request, m Message) error {
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return errors.New("auth request got wrong http code: " + string(http.StatusOK))
+		return errors.New(fmt.Sprintf("auth request got wrong http code: %d", response.StatusCode))
 	}
 
 	bodyBytes, err := ioutil.ReadAll(response.Body)

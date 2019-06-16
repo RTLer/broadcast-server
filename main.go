@@ -14,14 +14,14 @@ import (
 	"time"
 )
 
-func init() {
-	gStore = &Store {
-		Users: make([]*User, 0, 1),
-	}
-}
-
 func main() {
 	flags()
+
+	//go func() {
+	//	mux := http.NewServeMux()
+	//	mux.HandleFunc("/custom_debug_path/profile", pprof.Profile)
+	//	log.Fatal(http.ListenAndServe(":7777", mux))
+	//}()
 
 	gRedisConn, err := gRedisConn()
 	if err != nil {
@@ -63,7 +63,7 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func requestHandler(postData []byte) {
+func requestHandler(postData []byte, reqHandleTryCounter int) {
 	req, _ := http.NewRequest("POST", *webhookUrl, bytes.NewBuffer(postData))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -81,27 +81,29 @@ func requestHandler(postData []byte) {
 
 	response, err := netClient.Do(req)
 	if err != nil {
-		logrus.Infof("Remaining : %d times. Retry http request: %s\n", reqHandleTryCounter, err.Error())
+		reqHandleTryCounter++
 		time.Sleep(5 * time.Second)
 		if reqHandleTryCounter <= 10 {
-			reqHandleTryCounter++
-			requestHandler(postData)
+			logrus.Infof("Remaining : %d times. Retry http request: %s\n", 10 - reqHandleTryCounter, err.Error())
+			requestHandler(postData, reqHandleTryCounter)
 		}
 
 		return
 	}
+
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		logrus.Printf("got wrong http code(retry): %s\n", string(http.StatusOK))
+		reqHandleTryCounter++
+		logrus.Printf("got wrong http code(retry): %v\n", response.StatusCode)
 		time.Sleep(5 * time.Second)
 		if reqHandleTryCounter <= 10 {
-			reqHandleTryCounter++
-			requestHandler(postData)
+			requestHandler(postData, reqHandleTryCounter)
 		}
 
 		return
 	}
+
 }
 
 func authHandler(w http.ResponseWriter, r *http.Request) {
@@ -161,8 +163,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	i := 0
 
 	wg := sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(4)
 	//for {
+	go func() {
 		var m Message
 		if err := u.conn.ReadJSON(&m); err != nil {
 			i++
@@ -190,7 +193,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				authM.signMessage()
 
 				if err := u.authUser(r, m); err != nil {
-					logrus.Errorf("error auth command: %s\n", string(err.Error()))
+					logrus.Error(err.Error())
+					//logrus.Errorf("error auth command: %v\n", err.Error())
 					authM.Content = "auth failed"
 					authM.Command = "AuthFailed"
 				}
@@ -212,6 +216,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				logrus.Errorf("Error redis publish. %s\n", err)
 			}
 		}
+	}()
+
 	//}
 
 	wg.Wait()
@@ -275,7 +281,7 @@ func callWebhook(u *User, m Message) {
 			Message: m,
 		})
 
-	requestHandler(postData)
+	requestHandler(postData, 0)
 }
 
 func deliverMessages() {

@@ -18,7 +18,6 @@ var (
 	serverAddress  *string
 	authUrl        *string
 	webhookUrl     *string
-	//publicChannelsUrl string
 	subs = subscription{
 		Channels: []string{},
 	}
@@ -27,14 +26,7 @@ var (
 			return true
 		},
 	}
-
-	reqHandleTryCounter = 1
 )
-
-type Store struct {
-	Users []*User
-	sync.Mutex
-}
 
 type Message struct {
 	DeliveryID string      `json:"id"`
@@ -50,12 +42,6 @@ type WebhookMessage struct {
 
 type StatsData struct {
 	UserCount int `json:"user_count"`
-}
-
-type authInfo struct {
-	UserId   string `json:"user_id"`
-	ClientId string `json:"client_id"`
-	Otp      string `json:"otp"`
 }
 
 type AuthChannels struct {
