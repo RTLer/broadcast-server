@@ -10,7 +10,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"sync"
 	"time"
 )
 
@@ -36,7 +35,7 @@ func main() {
 	}
 
 	if *BroadcastStats {
-		serverStatusTicker()
+		go serverStatusTicker()
 	}
 
 	go deliverMessages()
@@ -103,7 +102,6 @@ func requestHandler(postData []byte, reqHandleTryCounter int) {
 
 		return
 	}
-
 }
 
 func authHandler(w http.ResponseWriter, r *http.Request) {
@@ -125,9 +123,8 @@ func authHandler(w http.ResponseWriter, r *http.Request) {
 						Content: data.Otp,
 					}
 					clientIdM.signMessage()
-					if err := u.conn.WriteJSON(clientIdM); err != nil {
-						logrus.Printf("error on message delivery through ws. e: %s\n", err)
-					}
+
+					writeJson(u, clientIdM)
 				}
 			}
 		}
@@ -155,34 +152,29 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientIdM.signMessage()
-	if err := u.conn.WriteJSON(clientIdM); err != nil {
-		logrus.Printf("error on message delivery through ws. e: %s\n", err)
-	}
+	writeJson(u, clientIdM)
 
 	logrus.Printf("user %s joined\n", u.ID)
-	i := 0
+	i := 1
 
-	wg := sync.WaitGroup{}
-	wg.Add(4)
-	//for {
-	go func() {
+	for {
 		var m Message
 		if err := u.conn.ReadJSON(&m); err != nil {
 			i++
-			if i >= 10 {
+			if i > 10 {
 				log.Printf("error on ws. message: %s\n", err.Error())
 				if err := subs.unsub(u); err != nil {
 					logrus.Errorf("Error on unsubscribe: %v", err)
 				}
 
 				gStore.RemoveUser(u)
+				logrus.Errorf("Removed User on connection problem %s\n", string(err.Error()))
+
 				if err := u.conn.Close(); err != nil {
 					logrus.Errorf("Error on close connection %v", err)
 				}
-				//break
+				break
 			}
-
-			logrus.Errorf("Removed User on connection problem %s\n", string(err.Error()))
 		} else {
 			switch m.Command {
 			case "auth":
@@ -194,14 +186,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 				if err := u.authUser(r, m); err != nil {
 					logrus.Error(err.Error())
-					//logrus.Errorf("error auth command: %v\n", err.Error())
 					authM.Content = "auth failed"
 					authM.Command = "AuthFailed"
 				}
 
-				if err := u.conn.WriteJSON(authM); err != nil {
-					logrus.Errorf("error on message delivery through ws. e: %s\n", err)
-				}
+				writeJson(u, authM)
 
 				break
 			default:
@@ -216,11 +205,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				logrus.Errorf("Error redis publish. %s\n", err)
 			}
 		}
-	}()
-
-	//}
-
-	wg.Wait()
+	}
 }
 
 func (sch *subscription) sub(u *User) error {
@@ -308,19 +293,27 @@ func (s *Store) findAndDeliver(redisChannel string, content []byte) {
 
 	for _, u := range s.Users {
 		if redisChannel == "public.all" {
-			if err := u.conn.WriteJSON(m); err != nil {
-				logrus.Error("Error on message delivery through ws. e: %s\n", err)
-			}
+			writeJson(u, m)
+
 			continue
 		} else {
 			for _, channel := range u.channels {
 				if channel == redisChannel {
-					if err := u.conn.WriteJSON(m); err != nil {
-						logrus.Error("Error on message delivery through ws. e: %s\n", err)
-					}
+					writeJson(u, m)
 				}
 			}
 		}
+	}
+}
+
+func writeJson(u *User, m Message) {
+	if err := u.conn.WriteJSON(m); err != nil {
+		logrus.Errorf("Error on message delivery through ws. e: %v\n User: %s", err, u.ID)
+		if err:= u.conn.Close(); err != nil {
+			logrus.Errorf("Error on close connection: %s", err)
+		}
+
+		gStore.RemoveUser(u)
 	}
 }
 
@@ -331,13 +324,10 @@ func (m *Message) signMessage() {
 
 func serverStatusTicker() {
 	ticker := time.NewTicker(10 * time.Second)
-
-	go func() {
-		for range ticker.C {
-			statsJson, _ := json.Marshal(getServerStats())
-			go gStore.findAndDeliver("public.all", statsJson)
-		}
-	}()
+	for range ticker.C {
+		statsJson, _ := json.Marshal(getServerStats())
+		go gStore.findAndDeliver("public.all", statsJson)
+	}
 }
 
 func getServerStats() Message {
