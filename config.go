@@ -33,6 +33,12 @@ func flags() {
 		"webhook url",
 	)
 
+	debug = flag.Bool(
+		"debug",
+		false,
+		"open debug mode",
+	)
+
 	//publicChannelsUrl = *flag.String(
 	//	"publicChannelsUrl",
 	//	"http://localhost:8003/api/broadcast/publicChannels",

@@ -18,6 +18,7 @@ var (
 	serverAddress  *string
 	authUrl        *string
 	webhookUrl     *string
+	debug          *bool
 	subs = subscription{
 		Channels: []string{},
 	}

@@ -26,12 +26,6 @@ type authInfo struct {
 	Otp      string `json:"otp"`
 }
 
-func init() {
-	gStore = &Store {
-		Users: make([]*User, 0, 1),
-	}
-}
-
 type User struct {
 	ID       string
 	userId   string

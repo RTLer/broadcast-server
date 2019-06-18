@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/garyburd/redigo/redis"
+	"github.com/getsentry/raven-go"
 	uuid "github.com/satori/go.uuid"
 	"github.com/sirupsen/logrus"
 	"log"
@@ -13,13 +14,29 @@ import (
 	"time"
 )
 
+func init() {
+	gStore = &Store {
+		Users: make([]*User, 0, 1),
+	}
+}
+
 func main() {
 	flags()
+
+	logrus.SetLevel(logrus.FatalLevel)
+	if *debug {
+		logrus.SetLevel(logrus.TraceLevel)
+	} else {
+		if err := raven.SetDSN("https://f4eebbf8fe9d4179a3884815c0055435:f6018bea50fe4c6a8d07a39aee13030c@sentry.zarinpal.com/20"); err != nil {
+			logrus.Errorf("Sentry log error: %s", err)
+		}
+	}
 
 	gRedisConn, err := gRedisConn()
 	if err != nil {
 		panic(err)
 	}
+
 	defer gRedisConn.Close()
 
 	gPubSubConn = &redis.PubSubConn{Conn: gRedisConn}
@@ -77,6 +94,11 @@ func requestHandler(postData []byte, reqHandleTryCounter int) {
 		reqHandleTryCounter++
 		time.Sleep(5 * time.Second)
 		if reqHandleTryCounter <= 10 {
+			raven.CaptureErrorAndWait(err, nil)
+			//raven.CapturePanic(func() {
+			//	// do all of the scary things here
+			//}, nil)
+
 			logrus.Infof("Remaining : %d times. Retry http request: %s\n", 10 - reqHandleTryCounter, err.Error())
 			requestHandler(postData, reqHandleTryCounter)
 		}
@@ -128,6 +150,7 @@ func authHandler(w http.ResponseWriter, r *http.Request) {
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		raven.CaptureErrorAndWait(err, nil)
 		logrus.Printf("Upgrader error %s\n", err.Error())
 
 		return
@@ -137,7 +160,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	u := gStore.NewUser(conn, trackId)
 	err = subs.sub(u)
 	if err != nil {
-		logrus.Printf("%s\n" + err.Error())
+		logrus.Errorf("%s\n" + err.Error())
 	}
 
 	clientIdM := Message{
@@ -193,9 +216,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if c, err := gRedisConn(); err != nil {
+			raven.CaptureErrorAndWait(err, nil)
+
 			logrus.Errorf("error on redis conn. %s\n", err)
 		} else {
 			if _, err := c.Do("PUBLISH", m.DeliveryID, string(m.Content)); err != nil {
+				raven.CaptureErrorAndWait(err, nil)
 				logrus.Errorf("Error redis publish. %s\n", err)
 			}
 		}
@@ -304,6 +330,7 @@ func writeJson(u *User, m Message) {
 	if err := u.conn.WriteJSON(m); err != nil {
 		logrus.Errorf("Error on message delivery through ws. e: %v\n User: %s", err, u.ID)
 		if err:= u.conn.Close(); err != nil {
+			raven.CaptureErrorAndWait(err, nil)
 			logrus.Errorf("Error on close connection: %s", err)
 		}
 

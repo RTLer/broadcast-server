@@ -9,7 +9,7 @@ this service run on redis for publish messages
 
 # How it`s run?
 ```
-go run *.go -BroadcastStats=true -authUrl=http://localhost:8090/api/broadcast/auth -webhookUrl=http://localhost:8090/api/broadcast/webhook -redisAddress=:6389 -serverAddress=:8081
+go run *.go -BroadcastStats=true -authUrl=http://localhost:8090/api/broadcast/auth -webhookUrl=http://localhost:8090/api/broadcast/webhook -redisAddress=:6389 -serverAddress=:8081 -debug=true
 ```
 
 # flags describe:
@@ -20,6 +20,7 @@ go run *.go -BroadcastStats=true -authUrl=http://localhost:8090/api/broadcast/au
 * **redisAddress**: set redist connection port, default is on :6379
 * **authUrl**: url of your client server for auth users
 * **webhookUrl**: webhook url that broadcast server call that on any action 
+* **debug**: show logs for debuging
 
 
 # data structure for input/output
