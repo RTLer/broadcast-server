@@ -9,7 +9,7 @@ this service run on redis for publish messages
 
 # How it`s run?
 ```
-go run *.go -BroadcastStats=true -serverAddress=8080 -redisAddress=6370 -authUrl=127.0.0.1/api/auth -webhookUrl=127.0.0.1/api/webhook
+go run *.go -BroadcastStats=true -authUrl=http://localhost:8090/api/broadcast/auth -webhookUrl=http://localhost:8090/api/broadcast/webhook -redisAddress=:6389 -serverAddress=:8081
 ```
 
 # flags describe:
