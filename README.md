@@ -9,7 +9,7 @@ this service run on redis for publish messages
 
 # How it`s run?
 ```
-go run *.go -BroadcastStats=true -authUrl=http://localhost:8090/api/broadcast/auth -webhookUrl=http://localhost:8090/api/broadcast/webhook -redisAddress=:6389 -serverAddress=:8081 -debug=true
+go run *.go -BroadcastStats=true -authUrl=http://localhost:8090/api/broadcast/auth -webhookUrl=http://localhost:8090/api/broadcast/webhook -redisAddress=:6389 -serverAddress=:8081 -debug=true -queues=success,failed
 ```
 
 # flags describe:
@@ -21,6 +21,7 @@ go run *.go -BroadcastStats=true -authUrl=http://localhost:8090/api/broadcast/au
 * **authUrl**: url of your client server for auth users
 * **webhookUrl**: webhook url that broadcast server call that on any action 
 * **debug**: show logs for debuging
+* **queues**: RabbitMQ queues. like: transactions,tickets. split with comma. the default queue name is **default**
 
 
 # data structure for input/output

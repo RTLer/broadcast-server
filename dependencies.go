@@ -1,35 +1,32 @@
 package main
 
 import (
-	"github.com/garyburd/redigo/redis"
 	"github.com/gorilla/websocket"
+	"github.com/streadway/amqp"
 	"net/http"
-	"sync"
 )
 
 var (
 	gStore       *Store
-	gPubSubConn  *redis.PubSubConn
-	redisAddress *string
-	gRedisConn   = func() (redis.Conn, error) {
-		return redis.Dial("tcp", *redisAddress)
-	}
+	queuesFlag *string //like: success,failed, ... | split with comma
+	queues []string
+
 	BroadcastStats *bool
 	serverAddress  *string
 	authUrl        *string
 	webhookUrl     *string
 	debug          *bool
-	subs = subscription{
-		Channels: []string{},
-	}
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			return true
 		},
 	}
+
+	rabbitMQ *amqp.Connection
 )
 
 type Message struct {
+	Channel string `json:"channel"`
 	DeliveryID string      `json:"id"`
 	Content    string      `json:"content"`
 	Command    string      `json:"command"`
@@ -48,9 +45,4 @@ type StatsData struct {
 type AuthChannels struct {
 	UserId   string   `json:"user_id"`
 	Channels []string `json:"channels"`
-}
-
-type subscription struct {
-	Channels []string `json:"Channels"`
-	sync.Mutex
 }

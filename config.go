@@ -15,12 +15,6 @@ func flags() {
 		"ws address",
 	)
 
-	redisAddress = flag.String(
-		"redisAddress",
-		":6379",
-		"redis connection",
-	)
-
 	authUrl = flag.String(
 		"authUrl",
 		"http://localhost:8080/api/broadcast/auth",
@@ -31,6 +25,12 @@ func flags() {
 		"webhookUrl",
 		"http://localhost:8080/api/broadcast/webhook",
 		"webhook url",
+	)
+
+	queuesFlag = flag.String(
+		"queues",
+		"default,",
+		"RabbitMQ queues. like: transactions,tickets. split with comma",
 	)
 
 	debug = flag.Bool(

@@ -31,6 +31,7 @@ type User struct {
 	userId   string
 	channels []string
 	conn     *websocket.Conn
+	connLock     *sync.Mutex
 }
 
 func (s *Store) NewUser(conn *websocket.Conn, trackId string) *User {
@@ -42,10 +43,11 @@ func (s *Store) NewUser(conn *websocket.Conn, trackId string) *User {
 		channels = []string{"direct." + userUuid.String()}
 	}
 
-	u := &User{
+	u := &User {
 		ID:       userUuid.String(),
 		channels: channels,
 		conn:     conn,
+		connLock: &sync.Mutex{},
 	}
 
 	s.Lock()
@@ -106,15 +108,14 @@ func (u *User) authUser(r *http.Request, m Message) error {
 
 	if authRes.UserId != "" {
 		u.userId = authRes.UserId
+		u.channels = append(u.channels, "direct."+string(authRes.UserId))
 	}
 
 	for _, channel := range authRes.Channels {
 		u.channels = append(u.channels, "private."+string(channel))
 	}
 
-	if err := subs.sub(u); err != nil {
-		logrus.Errorf("Error on subscribe: %v", err)
-	}
+	logrus.Info(u.channels)
 
 	return nil
 }

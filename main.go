@@ -3,25 +3,31 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
-	"github.com/garyburd/redigo/redis"
 	"github.com/getsentry/raven-go"
 	uuid "github.com/satori/go.uuid"
 	"github.com/sirupsen/logrus"
+	"github.com/streadway/amqp"
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
 func init() {
-	gStore = &Store {
+	gStore = &Store{
 		Users: make([]*User, 0, 1),
+	}
+
+	var err error
+	if rabbitMQ, err = amqp.Dial("amqp://guest:guest@localhost:5672/"); err != nil {
+		logrus.Fatalf("Failed to amqp.Dial to RabbitMQ: %s", err)
 	}
 }
 
 func main() {
 	flags()
+	queues = strings.Split(*queuesFlag, ",")
 
 	logrus.SetLevel(logrus.FatalLevel)
 	if *debug {
@@ -30,19 +36,6 @@ func main() {
 		if err := raven.SetDSN("https://f4eebbf8fe9d4179a3884815c0055435:f6018bea50fe4c6a8d07a39aee13030c@sentry.zarinpal.com/20"); err != nil {
 			logrus.Errorf("Sentry log error: %s", err)
 		}
-	}
-
-	gRedisConn, err := gRedisConn()
-	if err != nil {
-		panic(err)
-	}
-
-	defer gRedisConn.Close()
-
-	gPubSubConn = &redis.PubSubConn{Conn: gRedisConn}
-	defer gPubSubConn.Close()
-	if err := gPubSubConn.Subscribe("public.all"); err != nil {
-		panic(err)
 	}
 
 	if *BroadcastStats {
@@ -77,8 +70,8 @@ func requestHandler(postData []byte, reqHandleTryCounter int) {
 	req, _ := http.NewRequest("POST", *webhookUrl, bytes.NewBuffer(postData))
 	req.Header.Set("Content-Type", "application/json")
 
-	var netTransport = &http.Transport {
-		DialContext: (&net.Dialer {
+	var netTransport = &http.Transport{
+		DialContext: (&net.Dialer{
 			Timeout: 60 * time.Second,
 		}).DialContext,
 		TLSHandshakeTimeout: 60 * time.Second,
@@ -99,7 +92,7 @@ func requestHandler(postData []byte, reqHandleTryCounter int) {
 			//	// do all of the scary things here
 			//}, nil)
 
-			logrus.Infof("Remaining : %d times. Retry http request: %s\n", 10 - reqHandleTryCounter, err.Error())
+			logrus.Infof("Remaining : %d times. Retry http request: %s\n", 10-reqHandleTryCounter, err.Error())
 			requestHandler(postData, reqHandleTryCounter)
 		}
 
@@ -158,10 +151,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	trackId := r.URL.Path[len("/api/ws/"):]
 	u := gStore.NewUser(conn, trackId)
-	err = subs.sub(u)
-	if err != nil {
-		logrus.Errorf("%s\n" + err.Error())
-	}
 
 	clientIdM := Message{
 		Content: u.ID,
@@ -180,9 +169,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			i++
 			if i > 10 {
 				log.Printf("error on ws. message: %s\n", err.Error())
-				if err := subs.unsub(u); err != nil {
-					logrus.Errorf("Error on unsubscribe: %v", err)
-				}
 
 				gStore.RemoveUser(u)
 				logrus.Errorf("Removed User on connection problem %s\n", string(err.Error()))
@@ -206,6 +192,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					authM.Content = "auth failed"
 					authM.Command = "AuthFailed"
 				}
+				authM.Data = u.channels
 
 				writeJson(u, authM)
 
@@ -214,69 +201,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				go callWebhook(u, m)
 			}
 		}
-
-		if c, err := gRedisConn(); err != nil {
-			raven.CaptureErrorAndWait(err, nil)
-
-			logrus.Errorf("error on redis conn. %s\n", err)
-		} else {
-			if _, err := c.Do("PUBLISH", m.DeliveryID, string(m.Content)); err != nil {
-				raven.CaptureErrorAndWait(err, nil)
-				logrus.Errorf("Error redis publish. %s\n", err)
-			}
-		}
 	}
-}
-
-func (sch *subscription) sub(u *User) error {
-SubscriptionLoop:
-	for _, userChannel := range u.channels {
-		for _, subscribedChannel := range sch.Channels {
-			if userChannel == subscribedChannel {
-				log.Printf("has subscribtion %s\n", userChannel)
-				continue SubscriptionLoop
-			}
-		}
-		if err := gPubSubConn.Subscribe(userChannel); err != nil {
-			return errors.New("redis subscribe error" + err.Error())
-		}
-
-		sch.Lock()
-		sch.Channels = append(sch.Channels, userChannel)
-		sch.Unlock()
-		logrus.Printf("subscribed to %s\n", userChannel)
-	}
-
-	return nil
-}
-
-func (sch *subscription) unsub(u *User) error {
-UnSubscriptionLoop:
-	for _, userChannel := range u.channels {
-		for _, user := range gStore.Users {
-			if user.ID != u.ID {
-				for _, otherUsersChannel := range user.channels {
-					if userChannel == otherUsersChannel {
-						logrus.Printf("another user subscribed to \"%s\" channel\n", userChannel)
-						continue UnSubscriptionLoop
-					}
-				}
-			}
-		}
-
-		if err := gPubSubConn.Unsubscribe(userChannel); err != nil {
-			return errors.New("redis unsubscribe error")
-		}
-
-		for s, cha := range sch.Channels {
-			if cha == userChannel {
-				sch.Lock()
-				sch.Channels = append(sch.Channels[:s], sch.Channels[s+1:]...)
-				sch.Unlock()
-			}
-		}
-	}
-	return nil
 }
 
 func callWebhook(u *User, m Message) {
@@ -290,36 +215,82 @@ func callWebhook(u *User, m Message) {
 }
 
 func deliverMessages() {
-	for {
-		switch v := gPubSubConn.Receive().(type) {
-		case redis.Message:
-			logrus.Infof("Subscription message: %s: %s\n", v.Channel, v.Data)
-			go gStore.findAndDeliver(v.Channel, v.Data)
-		case redis.Subscription:
-			logrus.Infof("Subscription message: %s: %s %d\n", v.Channel, v.Kind, v.Count)
-		case error:
-			logrus.Error("Error pub/sub on connection, delivery has stopped")
-			return
+	defer func() {
+		if err := rabbitMQ.Close(); err != nil {
+			logrus.Fatalf("Failed to rabbitMQ.Close: %s", err)
 		}
+	}()
+
+	ch, chErr := rabbitMQ.Channel()
+	if chErr != nil {
+		logrus.Fatalf("Failed to open a channel: %s", chErr)
 	}
+	defer func() {
+		if err := ch.Close(); err != nil {
+			logrus.Fatalf("Failed to ch.Close: %s", err)
+		}
+	}()
+
+	forever := make(chan bool)
+
+	for _, qName := range queues {
+		q, qErr := ch.QueueDeclare(
+			qName, // name
+			false, // durable
+			false, // delete when unused
+			false, // exclusive
+			false, // no-wait
+			nil,   // arguments
+		)
+
+		if qErr != nil {
+			logrus.Fatalf("Failed to declare a queue: %s", qErr)
+		}
+
+		msgs, consumErr := ch.Consume(
+			q.Name, // queue
+			"",     // consumer
+			true,   // auto-ack
+			false,  // exclusive
+			false,  // no-local
+			false,  // no-wait
+			nil,    // args
+		)
+		if consumErr != nil {
+			logrus.Fatalf("Failed to register a consumer: %s", consumErr)
+		}
+
+		go func() {
+			for d := range msgs {
+
+				go gStore.findAndDeliver(d.Body)
+			}
+		}()
+	}
+
+	//log.Printf(" [*] Waiting for messages. To exit press CTRL+C")
+	<-forever
 }
 
-func (s *Store) findAndDeliver(redisChannel string, content []byte) {
+func (s *Store) findAndDeliver(content []byte) {
 	m := Message{}
 	if err := json.Unmarshal(content, &m); err != nil {
 		logrus.Error("Message format is not valid: %s\n", string(content))
 		return
 	}
 
+	logrus.Info(m.Channel)
+	usersLoop:
 	for _, u := range s.Users {
-		if redisChannel == "public.all" {
+		if m.Channel == "public.all" {
 			writeJson(u, m)
 
 			continue
 		} else {
 			for _, channel := range u.channels {
-				if channel == redisChannel {
+				if channel == m.Channel {
 					writeJson(u, m)
+					continue usersLoop
 				}
 			}
 		}
@@ -327,9 +298,11 @@ func (s *Store) findAndDeliver(redisChannel string, content []byte) {
 }
 
 func writeJson(u *User, m Message) {
+	u.connLock.Lock()
+	defer u.connLock.Unlock()
 	if err := u.conn.WriteJSON(m); err != nil {
 		logrus.Errorf("Error on message delivery through ws. e: %v\n User: %s", err, u.ID)
-		if err:= u.conn.Close(); err != nil {
+		if err := u.conn.Close(); err != nil {
 			raven.CaptureErrorAndWait(err, nil)
 			logrus.Errorf("Error on close connection: %s", err)
 		}
@@ -347,14 +320,15 @@ func serverStatusTicker() {
 	ticker := time.NewTicker(10 * time.Second)
 	for range ticker.C {
 		statsJson, _ := json.Marshal(getServerStats())
-		go gStore.findAndDeliver("public.all", statsJson)
+		go gStore.findAndDeliver(statsJson)
 	}
 }
 
 func getServerStats() Message {
-	statsMessage := Message {
+	statsMessage := Message{
+		Channel: "public.all",
 		Command: "ServerStats",
-		Data: StatsData {
+		Data: StatsData{
 			UserCount: len(gStore.Users),
 		},
 	}
