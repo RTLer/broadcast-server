@@ -33,6 +33,18 @@ func flags() {
 		"RabbitMQ queues. like: transactions,tickets. split with comma",
 	)
 
+	rabbitUser = flag.String(
+		"rabbitUser",
+		"guest,",
+		"RabbitMQ username",
+	)
+
+	rabbitPass = flag.String(
+		"rabbitPass",
+		"guest,",
+		"RabbitMQ password",
+	)
+
 	debug = flag.Bool(
 		"debug",
 		false,

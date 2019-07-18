@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/getsentry/raven-go"
 	uuid "github.com/satori/go.uuid"
 	"github.com/sirupsen/logrus"
@@ -20,7 +21,7 @@ func init() {
 	}
 
 	var err error
-	if rabbitMQ, err = amqp.Dial("amqp://guest:guest@localhost:5672/"); err != nil {
+	if rabbitMQ, err = amqp.Dial(fmt.Sprintf("amqp://%s:%s@localhost:5672/", *rabbitUser, *rabbitPass)); err != nil {
 		logrus.Fatalf("Failed to amqp.Dial to RabbitMQ: %s", err)
 	}
 }
