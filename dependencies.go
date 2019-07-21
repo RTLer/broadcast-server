@@ -16,8 +16,8 @@ var (
 	authUrl        *string
 	webhookUrl     *string
 	debug          *bool
-	rabbitUser     *string
-	rabbitPass     *string
+	rabbitEndPoint     *string
+
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			return true

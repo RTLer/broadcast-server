@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"github.com/getsentry/raven-go"
 	uuid "github.com/satori/go.uuid"
 	"github.com/sirupsen/logrus"
@@ -16,18 +15,19 @@ import (
 )
 
 func init() {
+	flags()
+
 	gStore = &Store{
 		Users: make([]*User, 0, 1),
 	}
 
 	var err error
-	if rabbitMQ, err = amqp.Dial(fmt.Sprintf("amqp://%s:%s@localhost:5672/", *rabbitUser, *rabbitPass)); err != nil {
+	if rabbitMQ, err = amqp.Dial(*rabbitEndPoint); err != nil {
 		logrus.Fatalf("Failed to amqp.Dial to RabbitMQ: %s", err)
 	}
 }
 
 func main() {
-	flags()
 	queues = strings.Split(*queuesFlag, ",")
 
 	logrus.SetLevel(logrus.FatalLevel)
