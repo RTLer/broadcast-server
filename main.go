@@ -7,7 +7,6 @@ import (
 	uuid "github.com/satori/go.uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -169,7 +168,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		if err := u.conn.ReadJSON(&m); err != nil {
 			i++
 			if i > 10 {
-				log.Printf("error on ws. message: %s\n", err.Error())
+				logrus.Errorf("error on ws. message: %s\n", err.Error())
 
 				gStore.RemoveUser(u)
 				logrus.Errorf("Removed User on connection problem %s\n", string(err.Error()))
@@ -193,7 +192,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					authM.Content = "auth failed"
 					authM.Command = "AuthFailed"
 				}
-				authM.Data = u.channels
+
+				if *debug {
+					authM.Data = u.channels
+				}
 
 				writeJson(u, authM)
 
