@@ -21,6 +21,12 @@ func flags() {
 		"auth url",
 	)
 
+	sentryDSN = flag.String(
+		"sentryDSN",
+		"https://user:pass@sentry.example.com/20",
+		"auth url",
+	)
+
 	webhookUrl = flag.String(
 		"webhookUrl",
 		"http://localhost:8080/api/broadcast/webhook",

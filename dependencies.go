@@ -7,16 +7,17 @@ import (
 )
 
 var (
-	gStore       *Store
+	gStore     *Store
 	queuesFlag *string //like: success,failed, ... | split with comma
-	queues []string
+	queues     []string
 
 	BroadcastStats *bool
 	serverAddress  *string
 	authUrl        *string
 	webhookUrl     *string
+	sentryDSN      *string
 	debug          *bool
-	rabbitEndPoint     *string
+	rabbitEndPoint *string
 
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -28,7 +29,7 @@ var (
 )
 
 type Message struct {
-	Channel string `json:"channel"`
+	Channel    string      `json:"channel"`
 	DeliveryID string      `json:"id"`
 	Content    string      `json:"content"`
 	Command    string      `json:"command"`

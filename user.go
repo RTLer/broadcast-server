@@ -90,8 +90,11 @@ func (u *User) authUser(r *http.Request, m Message) error {
 	if err != nil {
 		return errors.New("auth request failed: " + err.Error())
 	}
-
-	defer response.Body.Close()
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			panic(err)
+		}
+	}()
 
 	if response.StatusCode != http.StatusOK {
 		return errors.New(fmt.Sprintf("auth request got wrong http code: %d", response.StatusCode))
@@ -113,7 +116,7 @@ func (u *User) authUser(r *http.Request, m Message) error {
 
 	logrus.Warn(authRes.Channels)
 	for _, channel := range authRes.Channels {
-		u.channels = append(u.channels, "private."+string(channel))
+		u.channels = append(u.channels, "private." + channel)
 	}
 
 	logrus.Info(u.channels)

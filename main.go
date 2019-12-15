@@ -34,7 +34,7 @@ func main() {
 	if *debug {
 		logrus.SetLevel(logrus.TraceLevel)
 	} else {
-		if err := raven.SetDSN("https://f4eebbf8fe9d4179a3884815c0055435:f6018bea50fe4c6a8d07a39aee13030c@sentry.zarinpal.com/20"); err != nil {
+		if err := raven.SetDSN(*sentryDSN); err != nil {
 			logrus.Errorf("Sentry log error: %s", err)
 		}
 	}
@@ -53,7 +53,7 @@ func main() {
 	logrus.Fatal(http.ListenAndServe(*serverAddress, nil))
 }
 
-func statsHandler(w http.ResponseWriter, r *http.Request) {
+func statsHandler(w http.ResponseWriter, _ *http.Request) {
 	logrus.Info("Users Count:", len(gStore.Users))
 
 	statsMessage := getServerStats()
@@ -100,7 +100,11 @@ func requestHandler(postData []byte, reqHandleTryCounter int) {
 		return
 	}
 
-	defer response.Body.Close()
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			panic(err)
+		}
+	}()
 
 	if response.StatusCode != http.StatusOK {
 		reqHandleTryCounter++
@@ -109,12 +113,10 @@ func requestHandler(postData []byte, reqHandleTryCounter int) {
 		if reqHandleTryCounter <= 10 {
 			requestHandler(postData, reqHandleTryCounter)
 		}
-
-		return
 	}
 }
 
-func authHandler(w http.ResponseWriter, r *http.Request) {
+func authHandler(_ http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 
 	var data authInfo
@@ -172,7 +174,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				logrus.Errorf("error on ws. message: %s\n", err.Error())
 
 				gStore.RemoveUser(u)
-				logrus.Errorf("Removed User on connection problem %s\n", string(err.Error()))
+				logrus.Errorf("Removed User on connection problem %s\n", err.Error())
 
 				if err := u.conn.Close(); err != nil {
 					logrus.Errorf("Error on close connection %v", err)
