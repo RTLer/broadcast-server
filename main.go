@@ -19,12 +19,10 @@ func init() {
 	gStore = &Store{
 		Users: make([]*User, 0, 1),
 	}
-
-	var err error
 }
 
 func main() {
-	if rabbitMQ, err = amqp.Dial(*rabbitEndPoint); err != nil {
+	if rabbitMQ, err := amqp.Dial(*rabbitEndPoint); err != nil {
 		logrus.Fatalf("Failed to amqp.Dial to RabbitMQ: %s", err)
 	}
 
