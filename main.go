@@ -21,12 +21,13 @@ func init() {
 	}
 
 	var err error
-	if rabbitMQ, err = amqp.Dial(*rabbitEndPoint); err != nil {
-		logrus.Fatalf("Failed to amqp.Dial to RabbitMQ: %s", err)
-	}
 }
 
 func main() {
+	if rabbitMQ, err = amqp.Dial(*rabbitEndPoint); err != nil {
+		logrus.Fatalf("Failed to amqp.Dial to RabbitMQ: %s", err)
+	}
+
 	queues = strings.Split(*queuesFlag, ",")
 
 	logrus.SetLevel(logrus.FatalLevel)
