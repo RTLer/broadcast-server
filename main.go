@@ -22,7 +22,9 @@ func init() {
 }
 
 func main() {
-	if rabbitMQ, err := amqp.Dial(*rabbitEndPoint); err != nil {
+	var err error
+	rabbitMQ, err = amqp.Dial(*rabbitEndPoint)
+	if err != nil {
 		logrus.Fatalf("Failed to amqp.Dial to RabbitMQ: %s", err)
 	}
 
