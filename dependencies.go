@@ -45,6 +45,12 @@ type StatsData struct {
 	UserCount int `json:"user_count"`
 }
 
+type UserPublic struct {
+	ID       string `json:"id"`
+	UserId   string `json:"user_id"`
+	Channels []string `json:"channels"`
+}
+
 type AuthChannels struct {
 	UserId   string   `json:"user_id"`
 	Channels []string `json:"channels"`

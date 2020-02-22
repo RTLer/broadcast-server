@@ -48,6 +48,7 @@ func main() {
 	http.HandleFunc("/api/ws/", wsHandler)
 	http.HandleFunc("/api/ws/auth", authHandler)
 	http.HandleFunc("/api/ws/internal/stats", statsHandler)
+	http.HandleFunc("/api/ws/internal/channelStats", ChannelStatsHandler)
 
 	logrus.Infof("Server started at %s\n", *serverAddress)
 	logrus.Fatal(http.ListenAndServe(*serverAddress, nil))
@@ -60,6 +61,40 @@ func statsHandler(w http.ResponseWriter, _ *http.Request) {
 	res, jErr := json.Marshal(statsMessage)
 	if jErr != nil {
 		logrus.Error(jErr)
+	}
+
+	if _, err := w.Write(res); err != nil {
+		logrus.Error(err)
+	}
+}
+
+func ChannelStatsHandler(w http.ResponseWriter, r *http.Request) {
+
+	var filteredUsers []UserPublic
+	param1 := r.URL.Query().Get("q")
+
+	for _, u := range gStore.Users {
+		for _, ch := range u.channels {
+			if ch == param1 {
+				filteredUsers = append(filteredUsers, UserPublic{
+					ID:       u.ID,
+					UserId:   u.userId,
+					Channels: u.channels,
+				})
+			}
+		}
+	}
+	statsMessage := Message{
+		Channel: "public.all",
+		Command: "ChannelStats",
+		Data: filteredUsers,
+	}
+
+	statsMessage.signMessage()
+
+	res, err := json.Marshal(statsMessage)
+	if err != nil {
+		logrus.Error(err)
 	}
 
 	if _, err := w.Write(res); err != nil {

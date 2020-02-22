@@ -63,7 +63,8 @@ func (s *Store) RemoveUser(u *User) {
 	for index, user := range s.Users {
 		if user.ID == u.ID {
 			s.Lock()
-			s.Users = append(s.Users[:index], s.Users[index+1:]...)
+			s.Users[index] = s.Users[len(s.Users)-1]
+			s.Users = s.Users[:len(s.Users)-1]
 			s.Unlock()
 		}
 	}
